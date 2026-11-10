@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 
 from pydantic import BaseModel, Field
 
+from .catalogo import DESAGREGACIONES
 from .motor import Resultado
 
 MODELO = os.getenv("CIFRALISTA_MODELO", "claude-haiku-5-5")
@@ -152,36 +153,60 @@ def redactar(resultados: list[Resultado], pregunta="", api_key=None):
     return redactar_con_plantilla(resultados)
 
 
+def _sujeto(r):
+    """«la edad promedio…», «el porcentaje de productores…», «la pobreza monetaria»."""
+    nombre = r.indicador.nombre[0].lower() + r.indicador.nombre[1:]
+    if r.indicador.tipo == "media" or r.indicador.base == "enaho":
+        return f"la {nombre}"
+    return f"el porcentaje de {nombre}"
+
+
+def _lista(partes):
+    return partes[0] if len(partes) == 1 else ", ".join(partes[:-1]) + " y " + partes[-1]
+
+
 def redactar_con_plantilla(resultados: list[Resultado]):
     """Texto determinístico, sin IA: siempre verificable."""
     oraciones, titulo = [], ""
-    for h, r in zip(hechos(resultados), resultados):
+    for k, (h, r) in enumerate(zip(hechos(resultados), resultados)):
         u = " años" if r.unidad == "años" else " %"
-        nombre = h["indicador"][0].lower() + h["indicador"][1:]
         filtros = r.filtros.texto()
         ambito = f" ({filtros})" if filtros else ""
+        inicio = f"Según la {h['encuesta']}, " if k == 0 else "Por su parte, "
+        sujeto = _sujeto(r)
         if r.indicador.tipo == "distribucion":
-            vals = [v for v in h["valores"] if v["grupo"] in ("Total", "Perú")] or h["valores"]
-            partes = ", ".join(f"{v['categoria']}: {v['valor']}{u}" for v in vals)
-            oraciones.append(f"Según la {h['encuesta']}, la distribución de {nombre}{ambito} es: {partes}.")
+            grupos = list(dict.fromkeys(v["grupo"] for v in h["valores"]))
+            partes = []
+            for g in grupos:
+                vals = [v for v in h["valores"] if v["grupo"] == g]
+                top = max(vals, key=lambda v: float(v["valor"].replace(",", ".")))
+                partes.append((f"en {g.lower()}, " if len(grupos) > 1 else "") + f"el grupo más numeroso es "
+                              f"«{top['categoria']}» ({top['valor']}{u})")
+            oraciones.append(f"{inicio}en la {r.indicador.nombre.lower()}{ambito}, {_lista(partes)}.")
             titulo = titulo or r.indicador.nombre
         elif len(h["valores"]) == 1:
             v = h["valores"][0]
             ic = h.get("intervalo_95")
             extra = f" (intervalo de confianza al 95 %: {ic[0]}–{ic[1]}{u})" if ic else ""
-            if r.unidad == "años":
-                oraciones.append(f"Según la {h['encuesta']}, la {nombre}{ambito} es de {v['valor']} años{extra}.")
-            else:
-                oraciones.append(f"Según la {h['encuesta']}, el indicador «{h['indicador']}»{ambito} alcanza "
-                                 f"el {v['valor']} % del universo de {h['universo']}{extra}.")
-            titulo = titulo or f"{h['indicador']}: {v['valor']}{u}"
+            verbo = "es de" if r.unidad == "años" else "es"
+            oraciones.append(f"{inicio}{sujeto}{ambito} {verbo} {v['valor']}{u}{extra}.")
+            titulo = titulo or f"{r.indicador.nombre}: {v['valor']}{u}"
         else:
+            if len(h["valores"]) <= 5:
+                partes = [f"{v['valor']}{u} en {v['grupo']}" + (" (referencial)" if v["referencial"] else "")
+                          for v in h["valores"]]
+                oraciones.append(f"{inicio}{sujeto}{ambito} es de {_lista(partes)}.")
             if "mayor" in h:
-                oraciones.append(
-                    f"Según la {h['encuesta']}, {nombre}{ambito} varía de {h['menor']['valor']}{u} en "
-                    f"{h['menor']['grupo']} a {h['mayor']['valor']}{u} en {h['mayor']['grupo']}, una diferencia de "
-                    f"{h['diferencia_mayor_menor']}.")
-                titulo = titulo or f"{h['mayor']['grupo']} registra el mayor valor: {h['mayor']['valor']}{u}"
+                rango = (f"en {h['mayor']['grupo']} ({h['mayor']['valor']}{u}) y el más bajo en "
+                         f"{h['menor']['grupo']} ({h['menor']['valor']}{u}), una diferencia de "
+                         f"{h['diferencia_mayor_menor']}")
+                oraciones.append(f"El valor más alto se registra {rango}." if len(h["valores"]) <= 5
+                                 else f"{inicio}{sujeto}{ambito} alcanza su valor más alto {rango}.")
+                titulo = titulo or f"{h['mayor']['grupo']} registra el valor más alto: {h['mayor']['valor']}{u}"
             if "total_del_universo" in h:
-                oraciones.append(f"El valor para el total es {h['total_del_universo']}{u}.")
-    return Redaccion(titulo, " ".join(oraciones), "plantilla")
+                oraciones.append(f"Para el total, {sujeto} es {h['total_del_universo']}{u}.")
+            titulo = titulo or f"{r.indicador.nombre} según {DESAGREGACIONES[r.desagregacion].lower()}"
+    texto = " ".join(o[0].upper() + o[1:] for o in oraciones)
+    if any(v.get("referencial") for h in hechos(resultados) for v in h["valores"]):
+        texto += " Las cifras referenciales tienen un coeficiente de variación mayor a 15 % o menos de 30 casos."
+    return Redaccion(titulo, texto, "plantilla")

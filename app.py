@@ -196,9 +196,8 @@ if R:
         if red.aviso:
             st.caption(red.aviso)
 
-    for r in resultados:
-        for a in r.avisos:
-            st.info(a, icon=":material/info:")
+    for a in dict.fromkeys(a for r in resultados for a in r.avisos):      # sin repetir avisos iguales
+        st.info(a, icon=":material/info:")
 
     st.markdown("**Cuadro**")
     tabla = pd.concat([tabla_para_mostrar(r) for r in resultados], ignore_index=True)

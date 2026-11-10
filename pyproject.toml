@@ -1,0 +1,25 @@
+[project]
+name = "cifralista"
+version = "0.1.0"
+description = "Cifras oficiales de la ENAHO y la ENA, calculadas con factores de expansión y listas para tu nota técnica."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+authors = [{ name = "Lory Acosta Carbajal" }]
+dependencies = [
+    "anthropic>=1.0",
+    "matplotlib>=3.9",
+    "pandas>=2.2",
+    "pyarrow>=17",
+    "pydantic>=2.8",
+    "python-docx>=1.1",
+    "python-dotenv>=1.0",
+    "streamlit>=1.40",
+]
+
+[dependency-groups]
+dev = ["pytest>=8"]
+mcp = ["fastmcp>=2.10"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

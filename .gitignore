@@ -1,0 +1,26 @@
+# Secretos: nunca se suben
+.env
+.env.*
+!.env.example
+.streamlit/secrets.toml
+
+# Entornos y cachés
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ipynb_checkpoints/
+
+# Microdatos originales del INEI (pesan cientos de MB; se bajan con scripts/preparar_datos.py)
+datos_inei/
+*.dta
+*.zip
+
+# Salidas generadas por la app o el MCP
+salidas/
+*.docx
+
+# Sistema
+.DS_Store
+Thumbs.db
+.vscode/

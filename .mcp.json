@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "cifralista": {
+      "command": "uv",
+      "args": ["run", "--group", "mcp", "mcp_server.py"]
+    }
+  }
+}

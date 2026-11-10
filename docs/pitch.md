@@ -7,7 +7,7 @@ Turno 3 · miércoles 11 de noviembre, ~7:12 p. m.
 1. Abrir **dos pestañas**:
    - **Pública:** <https://cifralista.streamlit.app> (si estuvo dormida, tarda ~1 minuto en despertar: abrirla antes).
    - **Local con Claude:** en la carpeta del proyecto, `uv run streamlit run app.py` → <http://localhost:8501>. En
-     la barra lateral debe decir «Claude conectado (Claude Code local)».
+     la barra lateral debe decir «Claude · Claude Code local».
 2. En la pestaña local, correr una vez las preguntas 2 y 3 del guion. Quedan en caché y en vivo responden al
    instante (son los mismos resultados reales; la caché es parte del producto).
 3. Tener el video abierto en otra ventana por si se cae internet.

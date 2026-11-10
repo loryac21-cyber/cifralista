@@ -113,11 +113,14 @@ uv run streamlit run app.py
 Opcional: `copy .env.example .env` y poner ahí una `ANTHROPIC_API_KEY`. Sin clave, la app usa Claude Code si está
 instalado y, si no, el intérprete por reglas.
 
+**Enlace para compartir una consulta:** `?q=` abre la pregunta ya resuelta, por ejemplo
+<https://cifralista.streamlit.app/?q=Pobreza%20monetaria%20urbana%20y%20rural>.
+
 Pruebas: `uv run --group mcp pytest`. Servidor MCP: `claude mcp add --scope project cifralista -- uv run --group mcp mcp_server.py`.
 
 **Capturas**
 
-| Pregunta e interpretación | Gráfico y párrafo verificado | Cuadro, descargas y validación |
+| Pregunta, interpretación y validación contra el INEI | Gráfico y párrafo verificado | Cuadro con IC y CV, y descargas |
 |---|---|---|
 | ![Pregunta](docs/img/1_pregunta.png) | ![Resultado](docs/img/2_resultado.png) | ![Cuadro](docs/img/3_cuadro.png) |
 

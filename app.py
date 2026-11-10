@@ -78,8 +78,8 @@ with st.sidebar:
         "La IA nunca calcula ni inventa números.")
     via_ia = llm.camino(clave_api())
     ia_disponible = via_ia is not None
-    st.badge({"api": "Claude conectado (API)", "claude-code": "Claude conectado (Claude Code local)"}.get(
-        via_ia, "Sin IA generativa: intérprete por reglas"),
+    st.badge({"api": "Claude · API", "claude-code": "Claude · Claude Code local"}.get(
+        via_ia, "Intérprete por reglas (sin IA)"),
         icon=":material/smart_toy:" if ia_disponible else ":material/rule:",
         color="green" if ia_disponible else "gray")
     if not ia_disponible:
@@ -89,9 +89,8 @@ with st.sidebar:
     contraste = contraste_inei()
     st.caption(f"{int(contraste.Coincide.sum())} de {len(contraste)} cifras publicadas por el INEI se reproducen "
                "exactamente desde los microdatos.")
-    st.dataframe(contraste[["Indicador", "INEI", "CifraLista"]], hide_index=True,
-                 column_config={"INEI": st.column_config.NumberColumn(format="%.1f"),
-                                "CifraLista": st.column_config.NumberColumn(format="%.1f")})
+    st.table(contraste.assign(INEI=contraste.INEI.map(fmt), CifraLista=contraste.CifraLista.map(fmt))
+             .set_index("Indicador")[["INEI", "CifraLista"]])
     st.caption("Fuentes: INEI, microdatos de la ENA 2025 y la ENAHO 2024. Proyecto de la Diplomatura Q-Lab PUCP.")
 
 # Entrada --------------------------------------------------------------------------------------------------------------
@@ -101,12 +100,18 @@ modo = st.segmented_control("Cómo consultar", ["Escribir una pregunta", "Elegir
 consulta, origen, aviso_ia, via, costo_ia = None, "manual", "", "", 0.0
 pregunta = ""
 if modo == "Escribir una pregunta":
+    # Enlace para compartir una consulta: ?q=<pregunta> la resuelve al abrir la página (una vez por sesión).
+    q = st.query_params.get("q", "")
+    auto = bool(q) and st.session_state.get("q_resuelta") != q
     ejemplo = st.pills("Ejemplos", EJEMPLOS, key="ejemplo")
     with st.form("form_pregunta", border=False):
-        pregunta = st.text_area("Tu pregunta", value=ejemplo or "", height=80,
+        pregunta = st.text_area("Tu pregunta", value=ejemplo or q or "", height=80,
                                 placeholder="Por ejemplo: ¿qué porcentaje de productores recibió asistencia técnica "
                                             "en cada departamento?")
         enviar = st.form_submit_button("Calcular", type="primary", icon=":material/calculate:", key="calcular")
+    if auto and not enviar:
+        pregunta, enviar = q, True
+        st.session_state.q_resuelta = q
     if enviar and pregunta.strip():
         usar_ia = ia_disponible and st.session_state.consultas_ia < MAX_IA
         if ia_disponible and not usar_ia:

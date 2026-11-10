@@ -11,19 +11,18 @@ import pandas as pd
 import streamlit as st
 from dotenv import load_dotenv
 
+from cifralista import llm
 from cifralista.catalogo import AREAS, DEPARTAMENTOS, DESAGREGACIONES, INDICADORES, POR_ID, REGIONES
 from cifralista.exportar import documento, tabla_para_mostrar
 from cifralista.graficos import a_png, figura
 from cifralista.interprete import MODELO, Consulta, interpretar
-from cifralista.motor import Filtros, calcular_varios, codigo_reproducible
+from cifralista.motor import calcular_varios, codigo_reproducible
 from cifralista.redactor import fmt, fmt_valor, redactar, redactar_con_plantilla
 from cifralista.validacion import contrastar
 
 load_dotenv()
 st.set_page_config(page_title="CifraLista", page_icon=":material/query_stats:", layout="centered")
 
-# Precio de Claude Haiku 5.5 (US$ por millón de tokens, prompts de hasta 100 mil tokens).
-PRECIO_ENTRADA, PRECIO_SALIDA = 0.10, 0.50
 MAX_IA = int(os.getenv("CIFRALISTA_MAX_CONSULTAS_IA", "25"))
 EJEMPLOS = [
     "¿Qué porcentaje de productores tiene 60 años o más, por departamento?",
@@ -46,17 +45,20 @@ def clave_api():
 @st.cache_data(max_entries=500, show_spinner=False)
 def interpretar_cacheado(pregunta, usar_ia):
     """Una misma pregunta no se paga dos veces."""
-    r = interpretar(pregunta, api_key=clave_api() if usar_ia else None)
-    return r.consulta.model_dump(), r.origen, r.aviso, r.tokens_entrada, r.tokens_salida
+    r = interpretar(pregunta, api_key=clave_api(), usar_ia=usar_ia)
+    return r.consulta.model_dump(), r.origen, r.aviso, r.via, r.costo_usd
+
+
+@st.cache_data(max_entries=500, show_spinner=False)
+def redactar_cacheado(pregunta, consulta_json, usar_ia):
+    c = Consulta.model_validate_json(consulta_json)
+    resultados = calcular_varios(c.indicadores, c.desagregacion, c.filtros())
+    return redactar(resultados, pregunta, api_key=clave_api(), usar_ia=usar_ia)
 
 
 @st.cache_data(show_spinner=False)
 def contraste_inei():
     return pd.DataFrame(contrastar())
-
-
-def costo(tokens_in, tokens_out):
-    return (tokens_in * PRECIO_ENTRADA + tokens_out * PRECIO_SALIDA) / 1e6
 
 
 st.session_state.setdefault("consultas_ia", 0)
@@ -74,10 +76,15 @@ with st.sidebar:
         "2. **Python** calcula con el factor de expansión y el error estándar del diseño muestral.\n"
         "3. **Claude** redacta el párrafo y un verificador revisa que **cada cifra** salga del cálculo.\n\n"
         "La IA nunca calcula ni inventa números.")
-    ia_disponible = bool(clave_api())
-    st.badge("Claude conectado" if ia_disponible else "Sin clave de API: modo reglas",
-             icon=":material/smart_toy:" if ia_disponible else ":material/rule:",
-             color="green" if ia_disponible else "gray")
+    via_ia = llm.camino(clave_api())
+    ia_disponible = via_ia is not None
+    st.badge({"api": "Claude conectado (API)", "claude-code": "Claude conectado (Claude Code local)"}.get(
+        via_ia, "Sin IA generativa: intérprete por reglas"),
+        icon=":material/smart_toy:" if ia_disponible else ":material/rule:",
+        color="green" if ia_disponible else "gray")
+    if not ia_disponible:
+        st.caption("Esta versión pública responde con reglas y plantillas; las cifras son las mismas. Con Claude, la "
+                   "app entiende preguntas libres y redacta el párrafo.")
     st.subheader("Validación contra el INEI")
     contraste = contraste_inei()
     st.caption(f"{int(contraste.Coincide.sum())} de {len(contraste)} cifras publicadas por el INEI se reproducen "
@@ -91,7 +98,7 @@ with st.sidebar:
 modo = st.segmented_control("Cómo consultar", ["Escribir una pregunta", "Elegir el indicador"],
                             default="Escribir una pregunta", required=True, key="modo")
 
-consulta, origen, aviso_ia, tokens = None, "manual", "", (0, 0)
+consulta, origen, aviso_ia, via, costo_ia = None, "manual", "", "", 0.0
 pregunta = ""
 if modo == "Escribir una pregunta":
     ejemplo = st.pills("Ejemplos", EJEMPLOS, key="ejemplo")
@@ -99,14 +106,14 @@ if modo == "Escribir una pregunta":
         pregunta = st.text_area("Tu pregunta", value=ejemplo or "", height=80,
                                 placeholder="Por ejemplo: ¿qué porcentaje de productores recibió asistencia técnica "
                                             "en cada departamento?")
-        enviar = st.form_submit_button("Calcular", type="primary", icon=":material/calculate:")
+        enviar = st.form_submit_button("Calcular", type="primary", icon=":material/calculate:", key="calcular")
     if enviar and pregunta.strip():
         usar_ia = ia_disponible and st.session_state.consultas_ia < MAX_IA
         if ia_disponible and not usar_ia:
             st.info("Llegaste al tope de consultas con IA de esta sesión; sigo con el intérprete por reglas.")
-        with st.spinner("Interpretando la pregunta…"):
-            datos, origen, aviso_ia, t_in, t_out = interpretar_cacheado(pregunta.strip(), usar_ia)
-        consulta, tokens = Consulta(**datos), (t_in, t_out)
+        with st.spinner("Claude está interpretando la pregunta…" if usar_ia else "Interpretando la pregunta…"):
+            datos, origen, aviso_ia, via, costo_ia = interpretar_cacheado(pregunta.strip(), usar_ia)
+        consulta = Consulta(**datos)
         if origen == "claude":
             st.session_state.consultas_ia += 1
 else:
@@ -138,15 +145,14 @@ if consulta is not None:
             with st.spinner("Calculando con los microdatos…"):
                 resultados = calcular_varios(consulta.indicadores, consulta.desagregacion, consulta.filtros())
             usar_ia_texto = origen == "claude" and st.session_state.consultas_ia <= MAX_IA
-            with st.spinner("Redactando el párrafo…"):
-                red = redactar(resultados, pregunta, api_key=clave_api()) if usar_ia_texto \
+            with st.spinner("Claude está redactando el párrafo…" if usar_ia_texto else "Redactando el párrafo…"):
+                red = redactar_cacheado(pregunta, consulta.model_dump_json(), True) if usar_ia_texto \
                     else redactar_con_plantilla(resultados)
             fig = figura(resultados, red.titulo)
             png = a_png(fig) if fig else None
             st.session_state.resultado = {
-                "pregunta": pregunta, "consulta": consulta, "origen": origen, "aviso_ia": aviso_ia,
-                "resultados": resultados, "red": red, "png": png,
-                "tokens": (tokens[0] + red.tokens_entrada, tokens[1] + red.tokens_salida),
+                "pregunta": pregunta, "consulta": consulta, "origen": origen, "aviso_ia": aviso_ia, "via": via,
+                "resultados": resultados, "red": red, "png": png, "costo": costo_ia + red.costo_usd,
             }
         except ValueError as e:
             st.session_state.resultado = None
@@ -219,7 +225,7 @@ if R:
     with st.expander("Código para reproducir la cifra", icon=":material/code:"):
         st.caption("Pégalo en el anexo metodológico: reproduce la estimación puntual con pandas.")
         st.code(codigo_reproducible(resultados[0]), language="python")
-    t_in, t_out = R["tokens"]
-    if t_in:
-        st.caption(f"Esta consulta usó {fmt(t_in, 0)} tokens de entrada y {fmt(t_out, 0)} de salida con {MODELO}: "
-                   f"≈ US$ {costo(t_in, t_out):.4f}.")
+    if R["costo"]:
+        via_txt = "vía Claude Code, costo equivalente en la API" if R["via"] == "claude-code" else "vía API"
+        st.caption(f"Costo de IA de esta consulta: ≈ US$ {fmt(R['costo'], 4)} ({MODELO}, {via_txt}). Las preguntas "
+                   "repetidas salen de la caché y no se vuelven a pagar.")

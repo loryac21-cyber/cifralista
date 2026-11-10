@@ -12,7 +12,7 @@ inventar ninguna cifra.**
 | Pregunta → resultado | ~10 segundos: gráfico, párrafo verificado, cuadro con IC 95 % y CV, Word y código reproducible |
 | Validación | **10 de 10** cifras publicadas por el INEI se reproducen exactas desde los microdatos (ENA 2025 y ENAHO 2024) |
 | Pruebas | **49** pruebas automáticas (`uv run --group mcp pytest`) |
-| Costo de IA por consulta | menos de **US$ 0,001** con Claude Haiku 5.5 ([detalle](#7-modelo-de-negocio)) |
+| Costo de IA por consulta | ≈ **US$ 0,002** con Claude Haiku 5.5, medido ([detalle](#7-modelo-de-negocio)) |
 
 ---
 
@@ -93,15 +93,25 @@ El mismo motor está disponible como **servidor MCP** (`mcp_server.py`), para qu
 
 **URL pública:** <https://cifralista.streamlit.app> (Streamlit Community Cloud).
 
+La app tiene **tres modos**, y las cifras son las mismas en los tres porque las calcula Python:
+
+| Modo | Cuándo se activa | Qué hace la IA |
+|---|---|---|
+| **API de Anthropic** | Hay `ANTHROPIC_API_KEY` en `.env` o en los *Secrets* de Streamlit | Claude interpreta y redacta (modo de producción) |
+| **Claude Code local** | No hay clave, pero la computadora tiene Claude Code con sesión iniciada | Lo mismo, con `claude -p --json-schema` (salida estructurada) y sin clave de API |
+| **Reglas** | Ninguno de los anteriores (por ejemplo, la URL pública mientras no se active la API) | Nada: palabras clave y plantillas. Responde las preguntas de ejemplo y las del modo «Elegir el indicador» |
+
 **Correrlo en local** (se necesita [uv](https://docs.astral.sh/uv/)):
 
 ```bash
 git clone https://github.com/loryac21-cyber/cifralista.git
 cd cifralista
 uv sync
-copy .env.example .env      # y pon tu ANTHROPIC_API_KEY en .env (sin clave funciona con el intérprete por reglas)
 uv run streamlit run app.py
 ```
+
+Opcional: `copy .env.example .env` y poner ahí una `ANTHROPIC_API_KEY`. Sin clave, la app usa Claude Code si está
+instalado y, si no, el intérprete por reglas.
 
 Pruebas: `uv run --group mcp pytest`. Servidor MCP: `claude mcp add --scope project cifralista -- uv run --group mcp mcp_server.py`.
 
@@ -115,8 +125,8 @@ Pruebas: `uv run --group mcp pytest`. Servidor MCP: `claude mcp add --scope proj
 
 ```mermaid
 flowchart LR
-    U["Pregunta en español"] --> I["interprete.py<br/>Claude Haiku 5.5<br/>salida estructurada (Pydantic)"]
-    I -->|"sin clave o error"| R["intérprete por reglas"]
+    U["Pregunta en español"] --> I["interprete.py + llm.py<br/>Claude Haiku 5.5<br/>salida estructurada (Pydantic)<br/>API o Claude Code local"]
+    I -->|"sin acceso a Claude o error"| R["intérprete por reglas"]
     I --> C["Consulta: indicadores,<br/>desagregación, filtros (enums)"]
     R --> C
     C --> M["motor.py<br/>promedio ponderado + error estándar<br/>(estratos y conglomerados)"]
@@ -135,6 +145,7 @@ flowchart LR
 |---|---|---|
 | Interpretar la pregunta | Claude Haiku 5.5 (`claude-haiku-5-5`) con `messages.parse` y un modelo Pydantic | Tarea corta de clasificación: el modelo más barato con salidas estructuradas; los *enums* impiden inventar indicadores. Prompt del sistema con caché |
 | Redactar el párrafo | Claude Haiku 5.5, esfuerzo `low` | Texto breve a partir de cifras ya calculadas; el verificador cubre el riesgo |
+| Sin clave de API | Claude Code (`claude -p --json-schema`, mismo modelo y esquema) | Permite desarrollar y hacer el demo local sin pagar la API; no se usa en un servidor público |
 | Respaldo | Intérprete por reglas y texto por plantilla | El demo nunca se cae si no hay internet, clave o saldo |
 | Datos | Extracto propio de los microdatos del INEI (`scripts/preparar_datos.py`) | Sin API externa: más rápido y reproducible. El script se detiene si una cifra no coincide con el INEI |
 
@@ -157,13 +168,16 @@ desarrollo mientras crecen las suscripciones.
 
 **Cuánto cuesta cada usuario.**
 
-- **Tokens:** una consulta usa unos 2 500 tokens de entrada y 600 de salida entre la interpretación y la redacción
-  (estimación; la app muestra el costo real al pie de cada consulta). Con Claude Haiku 5.5 (US$ 0,10 y 0,50 por
-  millón): ≈ **US$ 0,0006 por consulta**. Un usuario intensivo (300 consultas al mes) cuesta **≈ US$ 0,20 al mes**.
+- **Tokens (medido el 10/11/2026 en 4 preguntas reales):** interpretar usa ~4 600 tokens de entrada (el catálogo va
+  en el prompt del sistema, que se cachea) y 400–670 de salida, entre US$ 0,0005 y 0,0018; redactar cuesta
+  US$ 0,0008–0,0012. Total: **≈ US$ 0,002 por consulta** con Claude Haiku 5.5 (US$ 0,10 y 0,50 por millón de
+  tokens). Un usuario intensivo (300 consultas al mes) cuesta **≈ US$ 0,60 al mes**. La app muestra el costo al pie
+  de cada consulta.
 - **Servidor:** US$ 0 en Streamlit Community Cloud durante el piloto; con usuarios pagantes, un servidor de
   US$ 10–25 al mes alcanza para cientos de usuarios (≈ US$ 0,10–0,25 por usuario).
 - **Cobro:** pasarela local (Culqi o Mercado Pago), alrededor de 4 % por transacción.
-- **Margen bruto:** sobre 90 % en el plan Profesional (S/ 49 ≈ US$ 13 frente a menos de US$ 1 de costo).
+- **Margen bruto:** cerca de 90 % en el plan Profesional, aun con un usuario intensivo: S/ 49 ≈ US$ 13 frente a
+  ≈ US$ 1,4 de costo (tokens, servidor y cobro).
 - **Tope de gasto:** límite mensual en la consola de Anthropic y tope de consultas con IA por sesión en la URL pública
   (`CIFRALISTA_MAX_CONSULTAS_IA`); además, la misma pregunta se responde desde caché y no se paga dos veces.
 
@@ -190,7 +204,7 @@ mapas por departamento, Censo 2017 por distrito para diagnósticos de proyectos,
 
 | Herramienta del curso | Dónde está | Para qué |
 |---|---|---|
-| **LLMs con salidas estructuradas (sesión 08)** | [`cifralista/interprete.py`](cifralista/interprete.py) (modelo `Consulta` con *enums*), [`cifralista/redactor.py`](cifralista/redactor.py) (modelo `Texto` + verificador) | Traducir la pregunta a una consulta válida y redactar sin inventar cifras |
+| **LLMs con salidas estructuradas (sesión 08)** | [`cifralista/interprete.py`](cifralista/interprete.py) (modelo `Consulta` con *enums*), [`cifralista/redactor.py`](cifralista/redactor.py) (modelo `Texto` + verificador), [`cifralista/llm.py`](cifralista/llm.py) (API o Claude Code) | Traducir la pregunta a una consulta válida y redactar sin inventar cifras |
 | **Dashboards con Streamlit (sesión 05)** | [`app.py`](app.py), [`cifralista/graficos.py`](cifralista/graficos.py) | La app pública: pregunta, gráfico, cuadro, descargas y validación contra el INEI |
 | Extra: **MCP (sesión 04)** | [`mcp_server.py`](mcp_server.py), [`.mcp.json`](.mcp.json) | El mismo motor como herramientas para Claude |
 | Extra: **Skills de la ENAHO (sesión 16)** | [`scripts/preparar_datos.py`](scripts/preparar_datos.py) | Las reglas de limpieza de mi *skill* `limpiando-enaho` (residentes habituales, `factor07 × mieperho`, validación contra el INEI), ampliadas a la ENA |

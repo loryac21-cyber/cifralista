@@ -1,21 +1,21 @@
 """De la pregunta en lenguaje natural a una consulta del catálogo (salida estructurada con Claude).
 
 El modelo solo elige: qué indicadores, cómo desagregar y qué filtros aplicar, siempre dentro de listas cerradas
-(enums del esquema). No ve los microdatos ni devuelve cifras. Si no hay clave de API o la llamada falla, un
+(enums del esquema). No ve los microdatos ni devuelve cifras. Si no hay acceso a Claude o la llamada falla, un
 intérprete por reglas hace lo mismo con palabras clave, para que el demo nunca se caiga.
 """
-import os
 import re
 from dataclasses import dataclass
 from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from . import llm
 from .catalogo import (AREAS, DEPARTAMENTOS, DESAGREGACIONES, IDS, INDICADORES, POR_ID, REGIONES,
                        catalogo_para_prompt)
 from .motor import Filtros, sin_tildes
 
-MODELO = os.getenv("CIFRALISTA_MODELO", "claude-haiku-5-5")
+MODELO = llm.MODELO
 
 
 class Consulta(BaseModel):
@@ -40,8 +40,10 @@ class Interpretacion:
     consulta: Consulta
     origen: str                  # "claude" | "reglas"
     aviso: str = ""
+    via: str = ""                # "api" | "claude-code" cuando origen es "claude"
     tokens_entrada: int = 0
     tokens_salida: int = 0
+    costo_usd: float = 0.0
 
 
 SISTEMA = f"""Eres el intérprete de CifraLista, una herramienta que calcula indicadores oficiales del Perú con los \
@@ -67,30 +69,13 @@ puede calcular.
 - La explicación va en español, sin cifras."""
 
 
-def _cliente(api_key):
-    import anthropic
-    return anthropic.Anthropic(api_key=api_key, max_retries=1, timeout=30.0)
-
-
-def interpretar(pregunta, api_key=None):
-    """Interpreta con Claude si hay clave; si no, o si falla, con reglas."""
-    api_key = api_key or os.getenv("ANTHROPIC_API_KEY")
-    if api_key:
+def interpretar(pregunta, api_key=None, usar_ia=True):
+    """Interpreta con Claude (API o Claude Code local); si no hay ninguno, o si falla, con reglas."""
+    if usar_ia and llm.camino(api_key):
         try:
-            r = _cliente(api_key).messages.parse(
-                model=MODELO,
-                max_tokens=2048,
-                system=[{"type": "text", "text": SISTEMA, "cache_control": {"type": "ephemeral"}}],
-                messages=[{"role": "user", "content": pregunta}],
-                output_config={"effort": "low"},
-                output_format=Consulta,
-            )
-            consulta = r.parsed_output
-            if consulta is None:
-                raise ValueError(f"respuesta sin consulta (stop_reason={r.stop_reason})")
-            consulta = _sanear(consulta)
-            return Interpretacion(consulta, "claude", tokens_entrada=r.usage.input_tokens,
-                                  tokens_salida=r.usage.output_tokens)
+            r = llm.llamar(SISTEMA, pregunta, Consulta, api_key=api_key)
+            return Interpretacion(_sanear(r.datos), "claude", via=r.via, tokens_entrada=r.tokens_entrada,
+                                  tokens_salida=r.tokens_salida, costo_usd=r.costo_usd)
         except Exception as e:  # el demo sigue con reglas; el aviso se muestra en la app
             return Interpretacion(interpretar_con_reglas(pregunta), "reglas",
                                   aviso=f"No se pudo usar Claude ({type(e).__name__}); se usó el intérprete por reglas.")

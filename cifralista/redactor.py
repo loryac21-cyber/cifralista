@@ -5,16 +5,14 @@ y luego `verificar_cifras` compara cada número del texto con los números permi
 el cálculo, la app lo marca y ofrece el texto por plantilla, que no usa IA.
 """
 import json
-import os
 import re
 from dataclasses import dataclass, field
 
 from pydantic import BaseModel, Field
 
+from . import llm
 from .catalogo import DESAGREGACIONES
 from .motor import Resultado
-
-MODELO = os.getenv("CIFRALISTA_MODELO", "claude-haiku-5-5")
 # Números que pueden aparecer sin venir del cálculo: años, cortes de edad del INEI, «últimos 12 meses», «95 %».
 NUMEROS_LIBRES = {2012, 2022, 2023, 2024, 2025, 2026, 0, 1, 3, 12, 14, 15, 24, 25, 29, 30, 44, 45, 59, 60, 64, 65, 95}
 
@@ -99,8 +97,10 @@ class Redaccion:
     origen: str                          # claude | plantilla
     no_verificadas: list = field(default_factory=list)
     aviso: str = ""
+    via: str = ""
     tokens_entrada: int = 0
     tokens_salida: int = 0
+    costo_usd: float = 0.0
 
 
 class Texto(BaseModel):
@@ -124,28 +124,17 @@ al final: la app la agrega.
 - Sin viñetas ni markdown."""
 
 
-def redactar(resultados: list[Resultado], pregunta="", api_key=None):
-    api_key = api_key or os.getenv("ANTHROPIC_API_KEY")
-    if api_key:
+def redactar(resultados: list[Resultado], pregunta="", api_key=None, usar_ia=True):
+    """Redacta con Claude (API o Claude Code local) y verifica las cifras; sin acceso a Claude, usa la plantilla."""
+    if usar_ia and llm.camino(api_key):
         try:
-            import anthropic
-            cliente = anthropic.Anthropic(api_key=api_key, max_retries=1, timeout=45.0)
-            r = cliente.messages.parse(
-                model=MODELO,
-                max_tokens=4096,
-                system=SISTEMA,
-                messages=[{"role": "user", "content":
-                           f"Pregunta del usuario: {pregunta}\n\nCifras calculadas:\n"
-                           f"{json.dumps(hechos(resultados), ensure_ascii=False, indent=1)}"}],
-                output_config={"effort": "low"},
-                output_format=Texto,
-            )
-            t = r.parsed_output
-            if t is None:
-                raise ValueError(f"respuesta sin texto (stop_reason={r.stop_reason})")
+            mensaje = (f"Pregunta del usuario: {pregunta}\n\nCifras calculadas:\n"
+                       f"{json.dumps(hechos(resultados), ensure_ascii=False, indent=1)}")
+            r = llm.llamar(SISTEMA, mensaje, Texto, api_key=api_key, max_tokens=4096)
+            t = r.datos
             malos = verificar_cifras(t.titulo + " " + t.parrafo, resultados, pregunta)
-            return Redaccion(t.titulo.strip(), t.parrafo.strip(), "claude", malos,
-                             tokens_entrada=r.usage.input_tokens, tokens_salida=r.usage.output_tokens)
+            return Redaccion(t.titulo.strip(), t.parrafo.strip(), "claude", malos, via=r.via,
+                             tokens_entrada=r.tokens_entrada, tokens_salida=r.tokens_salida, costo_usd=r.costo_usd)
         except Exception as e:
             red = redactar_con_plantilla(resultados)
             red.aviso = f"No se pudo usar Claude ({type(e).__name__}); el texto se armó con la plantilla."

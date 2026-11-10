@@ -1,0 +1,51 @@
+"""El intérprete por reglas (respaldo sin IA) y el verificador de cifras."""
+import pytest
+
+from cifralista.interprete import interpretar_con_reglas
+from cifralista.motor import calcular
+from cifralista.redactor import redactar_con_plantilla, verificar_cifras
+
+CASOS = [
+    ("¿Cuál es la edad promedio del productor agropecuario?", "edad_promedio", "nacional", {}),
+    ("Porcentaje de productores de 60 años a más por región natural", "productores_60_mas", "region_natural", {}),
+    ("¿Cuántos productores recibieron asistencia técnica por departamento?", "asistencia_tecnica", "departamento", {}),
+    ("Pobreza monetaria urbano y rural", "pobreza_monetaria", "area", {}),
+    ("pobreza extrema por departamento", "pobreza_extrema", "departamento", {}),
+    ("¿Qué porcentaje de productores obtuvo crédito en la sierra?", "obtuvo_credito", "nacional",
+     {"filtro_region_natural": "Sierra"}),
+    ("Capacitación de las mujeres productoras por región natural", "capacitacion", "region_natural",
+     {"filtro_sexo": "Mujer"}),
+    ("Nivel de educación del productor por sexo", "hasta_primaria", "sexo", {}),
+]
+
+
+@pytest.mark.parametrize("pregunta, indicador, desag, filtros", CASOS)
+def test_reglas(pregunta, indicador, desag, filtros):
+    c = interpretar_con_reglas(pregunta)
+    assert c.en_alcance
+    assert c.indicadores[0] == indicador
+    assert c.desagregacion == desag
+    for k, v in filtros.items():
+        assert getattr(c, k) == v
+
+
+def test_fuera_de_alcance():
+    c = interpretar_con_reglas("¿Cuánto cuesta un kilo de papa en Huancayo hoy?")
+    assert not c.en_alcance and c.indicadores == []
+
+
+def test_verificador_acepta_cifras_del_calculo_y_rechaza_inventadas():
+    res = [calcular("productores_60_mas", "region_natural")]
+    sierra = res[0].tabla.set_index("grupo").loc["Sierra", "valor"]
+    bueno = f"Según la ENA 2025, en la sierra el {sierra:.1f} % de los productores tiene 60 años o más.".replace(".", ",", 1)
+    bueno = bueno.replace(f"{sierra:.1f}", f"{sierra:.1f}".replace(".", ","))
+    assert verificar_cifras(bueno, res) == []
+    assert verificar_cifras("En la sierra el 71,3 % tiene 60 años o más.", res) == ["71,3"]
+
+
+def test_plantilla_siempre_verificable():
+    for ind, d in [("edad_promedio", "nacional"), ("asistencia_tecnica", "departamento"),
+                   ("estructura_edad", "nacional"), ("pobreza_monetaria", "area")]:
+        res = [calcular(ind, d)]
+        red = redactar_con_plantilla(res)
+        assert red.parrafo and verificar_cifras(red.titulo + " " + red.parrafo, res) == [], (ind, red.parrafo)

@@ -1,0 +1,10 @@
+[theme]
+base = "light"
+primaryColor = "#1c5cab"
+linkColor = "#1c5cab"
+
+[client]
+toolbarMode = "minimal"
+
+[server]
+runOnSave = true

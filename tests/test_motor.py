@@ -3,27 +3,18 @@ import pytest
 
 from cifralista.catalogo import INDICADORES, POR_ID
 from cifralista.motor import Filtros, calcular
-
-# (indicador, desagregación, filtros, grupo, cifra publicada por el INEI, fuente)
-PUBLICADAS = [
-    ("edad_promedio", "nacional", {}, "Perú", 54.5, "ENA 2025, nota de prensa del INEI"),
-    ("productores_60_mas", "nacional", {}, "Perú", 37.9, "ENA 2025"),
-    ("productores_15_24", "nacional", {}, "Perú", 0.9, "ENA 2025"),
-    ("edad_promedio", "sexo", {}, "Mujer", 55.2, "ENA 2025"),
-    ("hasta_primaria", "nacional", {}, "Perú", 57.7, "ENA 2025"),
-    ("capacitacion", "nacional", {}, "Perú", 7.4, "ENA 2025"),
-    ("pobreza_monetaria", "nacional", {}, "Perú", 27.6, "ENAHO 2024, informe técnico de pobreza"),
-    ("pobreza_monetaria", "area", {}, "Rural", 39.3, "ENAHO 2024"),
-    ("pobreza_monetaria", "area", {}, "Urbana", 24.8, "ENAHO 2024"),
-    ("pobreza_extrema", "nacional", {}, "Perú", 5.5, "ENAHO 2024"),
-]
+from cifralista.validacion import PUBLICADAS, contrastar
 
 
-@pytest.mark.parametrize("ind, desag, filtros, grupo, publicada, fuente", PUBLICADAS)
-def test_reproduce_cifra_publicada(ind, desag, filtros, grupo, publicada, fuente):
-    res = calcular(ind, desag, Filtros(**filtros))
+@pytest.mark.parametrize("ind, desag, grupo, publicada, fuente", PUBLICADAS)
+def test_reproduce_cifra_publicada(ind, desag, grupo, publicada, fuente):
+    res = calcular(ind, desag)
     valor = res.tabla.set_index("grupo").loc[grupo, "valor"]
     assert round(valor, 1) == pytest.approx(publicada, abs=0.05), f"{ind} {grupo}: {valor:.2f} vs {publicada} ({fuente})"
+
+
+def test_contraste_de_la_app_coincide_en_todo():
+    assert all(f["Coincide"] for f in contrastar())
 
 
 def test_estructura_de_edad_suma_100_y_coincide_con_el_inei():

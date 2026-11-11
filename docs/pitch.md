@@ -52,11 +52,14 @@ Turno 3 · miércoles 11 de noviembre, ~7:12 p. m.
 
 **Ensayo con cronómetro:** hacerlo 2 veces con el celular en modo cronómetro; si pasa de 3:00, cortar el paso 3.
 
-## Video de respaldo (75 s)
+## Video de respaldo (78 s, narrado)
 
-**Ya está grabado:** [`docs/video/cifralista_demo.mp4`](video/cifralista_demo.mp4) (68 s, sin voz, con subtítulos).
-Es una grabación real de la app en local con Claude (Playwright + Chrome), hecha el 10/11/2026. Si se cae internet,
-se reproduce desde la laptop. Para regrabarlo con tu voz, sigue la tabla de abajo.
+**Ya está grabado:** [`docs/video/cifralista_demo.mp4`](video/cifralista_demo.mp4) (78 s, con narración y
+subtítulos). Es una grabación real de la app en local con Claude (Playwright + Chrome), hecha el 11/11/2026. La
+narración es una **voz sintética** neuronal con acento peruano (Microsoft Edge TTS, `es-PE-CamilaNeural`).
+[`scripts/grabar_video.py`](../scripts/grabar_video.py) genera la voz, graba la app y hace que cada tramo dure lo que
+dura su narración. Si se cae internet, se reproduce desde la laptop. Para regrabarlo con tu voz, sigue la tabla de
+abajo.
 
 Grabar la pantalla con la herramienta Recortes de Windows (**Win + Mayús + R** → Grabar) o con Clipchamp, narrando en
 vivo. Usar la pestaña local con Claude para que se vea la IA.

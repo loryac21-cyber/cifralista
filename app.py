@@ -16,7 +16,7 @@ from cifralista.catalogo import AREAS, DEPARTAMENTOS, DESAGREGACIONES, INDICADOR
 from cifralista.exportar import documento, tabla_para_mostrar
 from cifralista.graficos import a_png, figura
 from cifralista.interprete import MODELO, Consulta, interpretar
-from cifralista.motor import calcular_varios, codigo_reproducible
+from cifralista.motor import base, calcular_varios, codigo_reproducible
 from cifralista.redactor import fmt, fmt_valor, redactar, redactar_con_plantilla
 from cifralista.validacion import contrastar
 
@@ -65,9 +65,20 @@ st.session_state.setdefault("consultas_ia", 0)
 st.session_state.setdefault("resultado", None)
 
 # Encabezado -----------------------------------------------------------------------------------------------------------
-st.title("CifraLista")
-st.markdown("Cifras oficiales de la **ENA 2025** y la **ENAHO 2024**, calculadas desde los microdatos del INEI con "
-            "factores de expansión, y listas para tu nota técnica: gráfico, párrafo, cuadro y ficha técnica.")
+st.caption(":blue[**DATOS OFICIALES DEL INEI · ENA 2025 · ENAHO 2024**]")
+st.title("CifraLista", anchor=False)
+st.markdown("Escribe tu pregunta y recibe **el gráfico, el párrafo y el cuadro de tu nota técnica**, con cifras "
+            "calculadas desde los microdatos del INEI con factores de expansión y verificadas una por una.")
+contraste = contraste_inei()
+k1, k2, k3, k4 = st.columns(4)
+k1.metric("Indicadores", len(INDICADORES), border=True, icon=":material/checklist:",
+          help="Indicadores validados en el catálogo.")
+k2.metric("Iguales al INEI", f"{int(contraste.Coincide.sum())}/{len(contraste)}", border=True,
+          icon=":material/verified:", help="Cifras publicadas por el INEI que CifraLista reproduce exactas.")
+k3.metric("Productores", fmt(len(base("ena")), 0), border=True, icon=":material/agriculture:",
+          help="Unidades agropecuarias encuestadas en la ENA 2025.")
+k4.metric("Personas", fmt(len(base("personas")), 0), border=True, icon=":material/groups:",
+          help="Residentes habituales encuestados en la ENAHO 2024.")
 
 with st.sidebar:
     st.header("Cómo funciona")
@@ -86,7 +97,6 @@ with st.sidebar:
         st.caption("Esta versión pública responde con reglas y plantillas; las cifras son las mismas. Con Claude, la "
                    "app entiende preguntas libres y redacta el párrafo.")
     st.subheader("Validación contra el INEI")
-    contraste = contraste_inei()
     st.caption(f"{int(contraste.Coincide.sum())} de {len(contraste)} cifras publicadas por el INEI se reproducen "
                "exactamente desde los microdatos.")
     st.table(contraste.assign(INEI=contraste.INEI.map(fmt), CifraLista=contraste.CifraLista.map(fmt))

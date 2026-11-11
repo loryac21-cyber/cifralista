@@ -1,7 +1,40 @@
+# Tema institucional en azules: superficie blanca, acentos azul INEI y barra lateral azul marino.
+# Los azules son los mismos pasos de la rampa que usan los gráficos (cifralista/graficos.py).
+
 [theme]
 base = "light"
-primaryColor = "#1c5cab"
-linkColor = "#1c5cab"
+primaryColor = "#1C5CAB"
+linkColor = "#1C5CAB"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F2F6FB"
+textColor = "#0F1B2D"
+borderColor = "#D6E0EC"
+showWidgetBorder = true
+showSidebarBorder = false
+baseRadius = "8px"
+buttonRadius = "8px"
+font = "'Inter':https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+codeFont = "'JetBrains Mono':https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap"
+codeFontSize = "0.82rem"
+baseFontSize = 15
+headingFontWeights = [700, 700, 600, 600, 600, 600]
+metricValueFontSize = "1.7rem"
+metricValueFontWeight = 700
+linkUnderline = false
+blueColor = "#1C5CAB"
+dataframeBorderColor = "#D6E0EC"
+dataframeHeaderBackgroundColor = "#E8F0FA"
+
+[theme.sidebar]
+backgroundColor = "#0D366B"
+secondaryBackgroundColor = "#184F95"
+textColor = "#F2F6FB"
+primaryColor = "#9EC5F4"
+linkColor = "#CDE2FB"
+borderColor = "#2A5A95"
+codeBackgroundColor = "#184F95"
+dataframeBorderColor = "#2A5A95"
+dataframeHeaderBackgroundColor = "#184F95"
 
 [client]
 toolbarMode = "minimal"

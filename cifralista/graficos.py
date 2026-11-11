@@ -16,7 +16,7 @@ from matplotlib.ticker import FuncFormatter  # noqa: E402
 
 from .redactor import fmt  # noqa: E402
 
-SUPERFICIE = "#fcfcfb"
+SUPERFICIE = "#ffffff"          # mismo fondo que la app y el Word
 TINTA = "#0b0b0b"
 TINTA_2 = "#52514e"
 TENUE = "#898781"

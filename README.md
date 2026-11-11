@@ -63,7 +63,7 @@ evidencia secundaria.
 
 **El insight: la IA no debe calcular, debe elegir.** CifraLista separa las tres cosas que un chatbot mezcla:
 
-1. **Entender** (IA): Claude traduce la pregunta a una consulta de un **catálogo cerrado de 20 indicadores validados**
+1. **Entender** (IA): Claude traduce la pregunta a una consulta de un **catálogo cerrado de 19 indicadores validados**
    con salida estructurada: los indicadores, la desagregación y los filtros son *enums* del esquema, así que no puede
    pedir nada que no exista.
 2. **Calcular** (Python, sin IA): promedios ponderados con el factor de expansión, **error estándar por linealización

@@ -1,6 +1,6 @@
 # CifraLista
 
-**Hacemos gráficos, párrafos y cuadros con cifras oficiales de la ENA y la ENAHO para analistas públicos, consultores
+**Hacemos gráficos, notas y cuadros con cifras oficiales de la ENA y la ENAHO para analistas públicos, consultores
 y tesistas del Perú, mediante una IA que entiende la pregunta y un motor que calcula desde los microdatos del INEI, sin
 inventar ninguna cifra.**
 

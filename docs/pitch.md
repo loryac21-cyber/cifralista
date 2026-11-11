@@ -72,7 +72,7 @@ listado) o a Google Drive con acceso por enlace, y pegar el enlace en el README 
 
 ```
 Nombre: Lory Acosta Carbajal
-Startup y one-liner: CifraLista. Hacemos gráficos, párrafos y cuadros con cifras oficiales de la ENA y la ENAHO para analistas públicos, consultores y tesistas del Perú, mediante una IA que entiende la pregunta y un motor que calcula desde los microdatos del INEI, sin inventar ninguna cifra.
+Startup y one-liner: CifraLista. Hacemos gráficos, notas y cuadros con cifras oficiales de la ENA y la ENAHO para analistas públicos, consultores y tesistas del Perú, mediante una IA que entiende la pregunta y un motor que calcula desde los microdatos del INEI, sin inventar ninguna cifra.
 Link del demo (URL pública, o "corre en local"): https://cifralista.streamlit.app (versión pública con intérprete por reglas; con Claude corre en local)
 Link del repo: https://github.com/loryac21-cyber/cifralista
 Herramientas del curso que usa: LLMs con salidas estructuradas (sesión 08, cifralista/interprete.py, redactor.py y llm.py) y Dashboards con Streamlit (sesión 05, app.py). Extra: MCP (sesión 04, mcp_server.py) y Skills de la ENAHO (sesión 16, scripts/preparar_datos.py).

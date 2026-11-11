@@ -52,9 +52,9 @@ Turno 3 · miércoles 11 de noviembre, ~7:12 p. m.
 
 **Ensayo con cronómetro:** hacerlo 2 veces con el celular en modo cronómetro; si pasa de 3:00, cortar el paso 3.
 
-## Video de respaldo (78 s, narrado)
+## Video de respaldo (76 s, narrado)
 
-**Ya está grabado:** [`docs/video/cifralista_demo.mp4`](video/cifralista_demo.mp4) (78 s, con narración y
+**Ya está grabado:** [`docs/video/cifralista_demo.mp4`](video/cifralista_demo.mp4) (76 s, con narración y
 subtítulos). Es una grabación real de la app en local con Claude (Playwright + Chrome), hecha el 11/11/2026. La
 narración es una **voz sintética** neuronal con acento peruano (Microsoft Edge TTS, `es-PE-CamilaNeural`).
 [`scripts/grabar_video.py`](../scripts/grabar_video.py) genera la voz, graba la app y hace que cada tramo dure lo que
@@ -70,7 +70,7 @@ vivo. Usar la pestaña local con Claude para que se vea la IA.
 | 10–30 s | Ejemplo de 60 años por departamento → gráfico | «Python calcula con factores de expansión y marca las cifras referenciales.» |
 | 30–45 s | Pregunta de cooperativas → párrafo con etiqueta verde | «Claude entiende la pregunta y redacta; un verificador revisa cada número contra el cálculo.» |
 | 45–60 s | Barra lateral: validación 10/10 → Descargar Word | «Diez de diez cifras del INEI se reproducen exactas. Todo sale en Word, con cuadro y ficha técnica.» |
-| 60–75 s | Pregunta del café | «Y si no tiene el dato, lo dice: no inventa. Tesistas S/ 19, profesionales S/ 49 al mes.» |
+| 60–75 s | Pregunta del café | «Y si no tiene el dato, lo dice: no inventa. CifraLista: cifras oficiales, listas para tu nota.» |
 
 Si el video pesa menos de 25 MB, guardarlo como `docs/video/cifralista_demo.mp4`; si pesa más, subirlo a YouTube (no
 listado) o a Google Drive con acceso por enlace, y pegar el enlace en el README y en el comentario del issue.

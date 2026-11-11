@@ -4,7 +4,7 @@
 y tesistas del Perú, mediante una IA que entiende la pregunta y un motor que calcula desde los microdatos del INEI, sin
 inventar ninguna cifra.**
 
-> Demo: **[cifralista.streamlit.app](https://cifralista.streamlit.app)** · Video de respaldo (78 s, narrado con voz
+> Demo: **[cifralista.streamlit.app](https://cifralista.streamlit.app)** · Video de respaldo (76 s, narrado con voz
 > sintética): [docs/video/cifralista_demo.mp4](https://github.com/loryac21-cyber/cifralista/raw/main/docs/video/cifralista_demo.mp4)
 > · Proyecto final de la Diplomatura Q-Lab PUCP ([issue #204](https://github.com/d2cml-ai/Data-Science-Python/issues/204))
 

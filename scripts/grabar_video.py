@@ -57,8 +57,8 @@ TRAMOS = [
     ("cafe", "Y si le pregunto algo que no está en los datos, como cuánto gana un productor de café, "
              "lo dice. No inventa.",
      "Si no tiene el dato, lo dice: no inventa"),
-    ("cierre", "CifraLista: cifras oficiales, listas para tu nota. Desde diecinueve soles al mes.",
-     "cifralista.streamlit.app · Tesis S/ 19 · Profesional S/ 49 al mes"),
+    ("cierre", "CifraLista: cifras oficiales, listas para tu nota.",
+     "Pruébala en cifralista.streamlit.app"),
 ]
 
 

@@ -4,7 +4,8 @@
 y tesistas del Perú, mediante una IA que entiende la pregunta y un motor que calcula desde los microdatos del INEI, sin
 inventar ninguna cifra.**
 
-> Demo: **[cifralista.streamlit.app](https://cifralista.streamlit.app)** · Video de respaldo: [docs/video](docs/pitch.md#video-de-respaldo-75-s)
+> Demo: **[cifralista.streamlit.app](https://cifralista.streamlit.app)** · Video de respaldo (68 s):
+> [docs/video/cifralista_demo.mp4](https://github.com/loryac21-cyber/cifralista/raw/main/docs/video/cifralista_demo.mp4)
 > · Proyecto final de la Diplomatura Q-Lab PUCP ([issue #204](https://github.com/d2cml-ai/Data-Science-Python/issues/204))
 
 | | |
@@ -210,6 +211,7 @@ mapas por departamento, Censo 2017 por distrito para diagnósticos de proyectos,
 | **LLMs con salidas estructuradas (sesión 08)** | [`cifralista/interprete.py`](cifralista/interprete.py) (modelo `Consulta` con *enums*), [`cifralista/redactor.py`](cifralista/redactor.py) (modelo `Texto` + verificador), [`cifralista/llm.py`](cifralista/llm.py) (API o Claude Code) | Traducir la pregunta a una consulta válida y redactar sin inventar cifras |
 | **Dashboards con Streamlit (sesión 05)** | [`app.py`](app.py), [`cifralista/graficos.py`](cifralista/graficos.py) | La app pública: pregunta, gráfico, cuadro, descargas y validación contra el INEI |
 | Extra: **MCP (sesión 04)** | [`mcp_server.py`](mcp_server.py), [`.mcp.json`](.mcp.json) | El mismo motor como herramientas para Claude |
+| Extra: **Despliegue (sesión 12)** | [cifralista.streamlit.app](https://cifralista.streamlit.app), [`requirements.txt`](requirements.txt), [`.streamlit/config.toml`](.streamlit/config.toml) | URL pública gratuita en Streamlit Community Cloud, con tope de consultas con IA y caché |
 | Extra: **Skills de la ENAHO (sesión 16)** | [`scripts/preparar_datos.py`](scripts/preparar_datos.py) | Las reglas de limpieza de mi *skill* `limpiando-enaho` (residentes habituales, `factor07 × mieperho`, validación contra el INEI), ampliadas a la ENA |
 
 **Por qué estas:** las salidas estructuradas son lo que hace segura la IA en este producto (no puede elegir algo

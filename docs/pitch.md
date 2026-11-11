@@ -54,6 +54,10 @@ Turno 3 · miércoles 11 de noviembre, ~7:12 p. m.
 
 ## Video de respaldo (75 s)
 
+**Ya está grabado:** [`docs/video/cifralista_demo.mp4`](video/cifralista_demo.mp4) (68 s, sin voz, con subtítulos).
+Es una grabación real de la app en local con Claude (Playwright + Chrome), hecha el 10/11/2026. Si se cae internet,
+se reproduce desde la laptop. Para regrabarlo con tu voz, sigue la tabla de abajo.
+
 Grabar la pantalla con la herramienta Recortes de Windows (**Win + Mayús + R** → Grabar) o con Clipchamp, narrando en
 vivo. Usar la pestaña local con Claude para que se vea la IA.
 

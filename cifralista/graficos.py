@@ -40,6 +40,11 @@ plt.rcParams.update({
 })
 
 
+def _eje(unidad):
+    """Rótulo del eje de valores: «años», «%», «kg/ha», «S/ por kg»."""
+    return "%" if unidad.startswith("%") else unidad
+
+
 def _lienzo(alto):
     fig = plt.figure(figsize=(ANCHO, alto), layout="constrained")
     fig.get_layout_engine().set(h_pad=0.08, w_pad=0.08)
@@ -98,7 +103,7 @@ def barras(resultado, titulo):
     ax.set_xlim(0, maximo * 1.15)
     ax.set_ylim(-0.6, n - 0.1 + (0.5 if resultado.nacional else 0))
     _marco(ax)
-    ax.set_xlabel("años" if resultado.unidad == "años" else "%", fontsize=9, color=TENUE, loc="right")
+    ax.set_xlabel(_eje(resultado.unidad), fontsize=9, color=TENUE, loc="right")
     nota = "* Cifra referencial: coeficiente de variación mayor a 15 % o menos de 30 casos." \
         if t.referencial.any() else ""
     _encabezado_y_pie(fig, ax, [resultado], titulo, nota)
@@ -199,7 +204,7 @@ def serie(resultados, titulo):
     ax.set_xticks(xs, [str(x) for x in xs])
     ax.set_xlim(min(todos) - 0.5, max(todos) + 0.5)
     _marco(ax, horizontal=False)
-    ax.set_ylabel("años" if r0.unidad == "años" else "%", fontsize=9, color=TENUE, loc="top")
+    ax.set_ylabel(_eje(r0.unidad), fontsize=9, color=TENUE, loc="top")
     notas = []
     if len(xs) > len(todos) or any(len(r.tabla) < len(todos) for r in usar):
         notas.append("Línea punteada: años sin dato" + (" (en 2020 no hubo ENA)." if corte and 2020 in xs else "."))

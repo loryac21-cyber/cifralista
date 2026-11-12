@@ -22,6 +22,11 @@ CASOS = [
     ("Pobreza monetaria por departamento en 2019", "pobreza_monetaria", "departamento", {"anio": "2019"}),
     ("¿Cuántas productoras de la sierra obtuvieron crédito en 2019?", "obtuvo_credito", "nacional",
      {"anio": "2019", "filtro_region_natural": "Sierra"}),
+    ("Edad promedio de los productores de cacao frente al resto", "edad_promedio", "productor_cacao",
+     {"solo_cacao": False}),
+    ("Pobreza monetaria de los hogares cacaoteros desde 2014", "pobreza_monetaria", "anio", {"solo_cacao": True}),
+    ("¿Cuál es el precio en chacra del cacao por departamento?", "cacao_precio_chacra", "departamento",
+     {"solo_cacao": False}),
 ]
 
 
@@ -52,7 +57,9 @@ def test_verificador_acepta_cifras_del_calculo_y_rechaza_inventadas():
 def test_plantilla_siempre_verificable():
     for ind, d in [("edad_promedio", "nacional"), ("asistencia_tecnica", "departamento"),
                    ("estructura_edad", "nacional"), ("pobreza_monetaria", "area"), ("productores_60_mas", "anio"),
-                   ("pobreza_monetaria", "anio"), ("obtuvo_credito", "anio"), ("estructura_edad", "anio")]:
+                   ("pobreza_monetaria", "anio"), ("obtuvo_credito", "anio"), ("estructura_edad", "anio"),
+                   ("cacao_rendimiento", "anio"), ("cacao_precio_chacra", "departamento"),
+                   ("pobreza_monetaria", "productor_cacao")]:
         res = [calcular(ind, d)]
         red = redactar_con_plantilla(res)
         assert red.parrafo and verificar_cifras(red.titulo + " " + red.parrafo, res) == [], (ind, red.parrafo)

@@ -39,6 +39,8 @@ ENA_MODULOS = {
     2023: (922, (1842, 1843, 1844, 1846)), 2024: (973, (1907, 1908, 1909, 1911)),
     2025: (1036, (1907, 1908, 1909, 1911)),
 }
+ENA_MODULO_CULTIVOS = {2014: 773, 2015: 789, 2016: 1123, 2017: 1316, 2018: 1451, 2019: 1530, 2021: 1794,
+                       2022: 1738, 2023: 1830, 2024: 1895, 2025: 1895}    # capítulo 200: cultivos cosechados
 ENAHO_CODIGOS = {2014: 440, 2015: 498, 2016: 546, 2017: 603, 2018: 634, 2019: 687, 2020: 737, 2021: 759,
                  2022: 784, 2023: 906, 2024: 966}
 CODIGO_A_ANIO = {c: a for a, (c, _) in ENA_MODULOS.items()} | {c: a for a, c in ENAHO_CODIGOS.items()}
@@ -73,9 +75,12 @@ REFERENCIA_INEI = {
 # Carpetas de trabajo (bases derivadas, copias de respaldo, paneles): nunca se leen como fuente oficial.
 EXCLUIR = {"bak.stunicode", "output", "input", "do", "do files", "cuadros", "graficos", "resultados", "salida",
            "15-21", "panel_2015-2019", "ingreso", "insumo", "agropecuario", "bases", "programas presupuestales"}
-PATRON_ENA = {cap: re.compile(rf"^(\d{{1,2}}_)?cap{cap}\.(dta|sav)$", re.I) for cap in ("700", "800", "900", "1100")}
+PATRON_ENA = {cap: re.compile(rf"^(\d{{1,2}}_)?cap{cap}\.(dta|sav)$", re.I)
+              for cap in ("200ab", "700", "800", "900", "1100")}
 PATRON_SUMARIA = re.compile(r"^sumaria-(20\d\d)\.dta$", re.I)
 PATRON_MIEMBROS = re.compile(r"^enaho01-(20\d\d)-200\.dta$", re.I)
+PATRON_AGRICOLA = re.compile(r"^enaho02-(20\d\d)-2100\.dta$", re.I)     # módulo 22: producción agrícola
+CACAO_ENA, CACAO_ENAHO = 1202, 1212      # el código del cacao no es el mismo: en la ENAHO el 1202 es achiote
 
 
 # Búsqueda y lectura ---------------------------------------------------------------------------------------------------
@@ -102,7 +107,7 @@ def inventario(directorios):
                 anio = anio_de_ruta(texto)
                 if anio:
                     hallados.setdefault((f"ena{cap}", anio), []).append((not oficial, (ruta, miembro)))
-        for tipo, patron in (("sumaria", PATRON_SUMARIA), ("miembros", PATRON_MIEMBROS)):
+        for tipo, patron in (("sumaria", PATRON_SUMARIA), ("miembros", PATRON_MIEMBROS), ("agricola", PATRON_AGRICOLA)):
             m = patron.match(nombre)
             if m:
                 hallados.setdefault((tipo, int(m.group(1))), []).append((not oficial, (ruta, miembro)))
@@ -120,7 +125,19 @@ def inventario(directorios):
                     continue
             else:
                 registrar(p.name, p, None)
-    return {k: min(v, key=lambda t: t[0])[1] for k, v in hallados.items()}
+    return {k: [f for _, f in sorted(v, key=lambda t: t[0])] for k, v in hallados.items()}
+
+
+def leer_anio(candidatos, columnas, anio):
+    """Lee el primer candidato cuyo ANIO sea el pedido: hay copias locales con el año cambiado (la carpeta 2016 del
+    disco D: tiene un capítulo 200 que en realidad es de 2015)."""
+    for fuente in candidatos:
+        df = leer(fuente, list(dict.fromkeys(["ANIO"] + columnas)))
+        en_archivo = set(pd.to_numeric(df["ANIO"], errors="coerce").dropna().astype(int)) if "ANIO" in df else set()
+        if not en_archivo or en_archivo == {anio}:
+            return df
+        print(f"    descarto {fuente[0].name}{'!' + fuente[1] if fuente[1] else ''}: trae ANIO {sorted(en_archivo)}")
+    raise SystemExit(f"Ningún archivo de {anio} trae ANIO = {anio}: {candidatos}")
 
 
 def leer(fuente, columnas):
@@ -156,8 +173,9 @@ def texto(serie, ancho=None):
 def descargar(destino):
     import urllib.request
     destino.mkdir(parents=True, exist_ok=True)
-    pedidos = [("SPSS" if a == 2014 else "STATA", c, m) for a, (c, mods) in ENA_MODULOS.items() for m in mods]
-    pedidos += [("STATA", c, m) for c in ENAHO_CODIGOS.values() for m in ("34", "02")]
+    pedidos = [("SPSS" if a == 2014 else "STATA", c, m) for a, (c, mods) in ENA_MODULOS.items()
+               for m in mods + (ENA_MODULO_CULTIVOS[a],)]
+    pedidos += [("STATA", c, m) for c in ENAHO_CODIGOS.values() for m in ("34", "02", "22")]
     for formato, codigo, modulo in pedidos:
         archivo = destino / f"{codigo}-Modulo{modulo}.zip"
         if archivo.exists():
@@ -186,15 +204,38 @@ def si(serie):
     return np.where(serie.isna(), np.nan, (serie == 1).astype(float))
 
 
+CAMPOS_200 = ["P204_COD", "P217_SUP_HA", "P219_CANT_1", "P219_CANT_2", "P219_EQUIV_KG", "P220_1_CANT_1",
+              "P220_1_CANT_2", "P220_1_VAL", "P222_1", "P222_4", "P222_5"]
+
+
+def cacao_por_ua(c200, llaves):
+    """Una fila por unidad agropecuaria que cosechó cacao en los últimos 12 meses (capítulo 200, código 1202):
+    superficie cosechada, producción y venta en kg, valor de la venta y a quién le vendió."""
+    c = c200[c200["P204_COD"] == CACAO_ENA]
+    num = lambda col: c[col] if col in c else pd.Series(np.nan, index=c.index)  # noqa: E731
+    eq = num("P219_EQUIV_KG")                                       # kg por unidad de medida declarada
+    sale = lambda col: (num(col) == 1).astype(float).where(num(col).notna())  # noqa: E731
+    t = pd.DataFrame({
+        **{k: c[k] for k in llaves},
+        "cacao_ha": num("P217_SUP_HA"),
+        "cacao_kg": (num("P219_CANT_1") + num("P219_CANT_2").fillna(0) / 1000) * eq,
+        "cacao_kg_vendido": (num("P220_1_CANT_1") + num("P220_1_CANT_2").fillna(0) / 1000) * eq,
+        "cacao_valor_venta": num("P220_1_VAL"),
+        "cacao_vende_acopiador": sale("P222_1"), "cacao_vende_cooperativa": sale("P222_4"),
+        "cacao_vende_empresa": sale("P222_5"),
+    })
+    g = t.groupby(llaves)
+    suma = {k: g[k].sum(min_count=1) for k in ("cacao_ha", "cacao_kg", "cacao_kg_vendido", "cacao_valor_venta")}
+    maxi = {k: g[k].max() for k in ("cacao_vende_acopiador", "cacao_vende_cooperativa", "cacao_vende_empresa")}
+    return pd.DataFrame({**suma, **maxi}).reset_index()
+
+
 def ena_anio(anio, inv):
     caps = {}
-    for cap, variables in VARIABLES.items():
+    for cap, variables in [("200ab", CAMPOS_200)] + list(VARIABLES.items()):
         if (f"ena{cap}", anio) in inv:
             todas = LLAVES_VIEJAS + LLAVES_NUEVAS + DISENO + variables
-            df = leer(inv[(f"ena{cap}", anio)], list(dict.fromkeys(todas)))
-            if "ANIO" in df and pd.to_numeric(df["ANIO"], errors="coerce").dropna().astype(int).ne(anio).any():
-                raise SystemExit(f"ENA {anio}: el capítulo {cap} trae otro año en ANIO ({inv[(f'ena{cap}', anio)]}).")
-            caps[cap] = df
+            caps[cap] = leer_anio(inv[(f"ena{cap}", anio)], list(dict.fromkeys(todas)), anio)
     if "700" not in caps or "1100" not in caps:
         raise SystemExit(f"ENA {anio}: faltan los capítulos 700 o 1100 (encontré {sorted(caps)}).")
     nuevo = "NSEGM" in caps["700"]
@@ -217,6 +258,10 @@ def ena_anio(anio, inv):
     if prod.duplicated(llaves).any():
         raise SystemExit(f"ENA {anio}: hay más de un productor por unidad agropecuaria en el capítulo 1100.")
     ua = ua.merge(prod, on=llaves, how="left", validate="1:1", indicator=True)
+    if "200ab" in caps:
+        ua = ua.merge(cacao_por_ua(caps["200ab"], llaves), on=llaves, how="left", validate="1:1", indicator="_cacao")
+    else:
+        ua["_cacao"] = "sin dato"
     for c in VARIABLES["700"] + VARIABLES["800"] + VARIABLES["900"] + VARIABLES["1100"]:
         if c not in ua:
             ua[c] = np.nan                                     # p. ej. la ENA 2021 no tuvo capítulo 900
@@ -271,6 +316,14 @@ def ena_anio(anio, inv):
     df["seguro_agrario"] = si(ua.P905)
     df["cuenta_ahorro"] = si(ua.P907)
     df["agricola_y_pecuaria"] = df.tipo_actividad.eq("Agrícola y pecuaria").astype(float)
+    # Cacao: la unidad agropecuaria cosechó cacao en los últimos 12 meses (capítulo 200, código 1202).
+    df["productor_cacao"] = np.select([ua._cacao.eq("both"), ua._cacao.eq("left_only")],
+                                      ["Productor de cacao", "Otros productores"], default=None)
+    for c in ("cacao_ha", "cacao_kg", "cacao_kg_vendido", "cacao_valor_venta", "cacao_vende_acopiador",
+              "cacao_vende_cooperativa", "cacao_vende_empresa"):
+        df[c] = ua[c] if c in ua else np.nan
+    df.loc[df.cacao_ha.le(0), "cacao_ha"] = np.nan                 # sin superficie no hay rendimiento
+    df.loc[df.cacao_kg_vendido.le(0), ["cacao_kg_vendido", "cacao_valor_venta"]] = np.nan
     df = df[df.factor.gt(0)].reset_index(drop=True)            # sin factor = no respondió (p. ej. 86 casos en 2015)
     persona = df.pequeno_mediano
     sin_cap = sorted(c for c, v in VARIABLES.items() if c not in caps)
@@ -285,10 +338,18 @@ LLAVES_ENAHO = ["CONGLOME", "VIVIENDA", "HOGAR"]
 
 
 def enaho_anio(anio, inv):
-    s = leer(inv[("sumaria", anio)], LLAVES_ENAHO + ["UBIGEO", "DOMINIO", "ESTRATO", "MIEPERHO", "POBREZA",
-                                                     "FACTOR07"])
-    p = leer(inv[("miembros", anio)], LLAVES_ENAHO + ["CODPERSO", "P203", "P204", "P205", "P206", "P207", "P208A",
-                                                      "FACPOB07"])
+    s = leer(inv[("sumaria", anio)][0], LLAVES_ENAHO + ["UBIGEO", "DOMINIO", "ESTRATO", "MIEPERHO", "POBREZA",
+                                                        "FACTOR07"])
+    p = leer(inv[("miembros", anio)][0], LLAVES_ENAHO + ["CODPERSO", "P203", "P204", "P205", "P206", "P207", "P208A",
+                                                         "FACPOB07"])
+    agro = None
+    if ("agricola", anio) in inv:            # módulo 22: un registro por producto agrícola del hogar
+        agro = leer(inv[("agricola", anio)][0], LLAVES_ENAHO + ["P2100B"])
+        for c, ancho in {"CONGLOME": 6, "VIVIENDA": 3, "HOGAR": 2}.items():
+            agro[c] = texto(agro[c], ancho)
+        agro["cacao"] = pd.to_numeric(agro.P2100B, errors="coerce").eq(CACAO_ENAHO)
+        agro = agro.groupby(LLAVES_ENAHO).cacao.any().reset_index()
+        agro.columns = [c.lower() for c in agro.columns]
     for df in (s, p):
         for c, ancho in {"CONGLOME": 6, "VIVIENDA": 3, "HOGAR": 2, "CODPERSO": 2, "UBIGEO": 6}.items():
             if c in df:
@@ -312,6 +373,13 @@ def enaho_anio(anio, inv):
         "pobre_extremo": s.pobreza.eq(1).astype(float),
     })
     h = h[h.factor.gt(0) & s.pobreza.notna()]
+    if agro is not None:
+        h = h.merge(agro, on=llaves, how="left", validate="1:1")
+        h["productor_cacao"] = np.select([h.cacao.eq(True), h.cacao.eq(False)],
+                                         ["Hogar cacaotero", "Otro hogar agrícola"], default="Hogar no agrícola")
+        h = h.drop(columns="cacao")
+    else:
+        h["productor_cacao"] = None
     residente = ((p.p204 == 1) & (p.p205 == 2)) | ((p.p204 == 2) & (p.p206 == 1))
     p = p[residente].merge(h, on=llaves, how="inner", validate="m:1")
     personas = pd.DataFrame({
@@ -320,7 +388,7 @@ def enaho_anio(anio, inv):
         "factor": p.facpob07.astype(float),
         "sexo": p.p207.map({1: "Hombre", 2: "Mujer"}),
         "edad": p.p208a,
-        "pobre": p.pobre, "pobre_extremo": p.pobre_extremo,
+        "pobre": p.pobre, "pobre_extremo": p.pobre_extremo, "productor_cacao": p.productor_cacao,
     })
     personas["grupo_edad"] = pd.cut(personas.edad, [-1, 14, 29, 44, 64, 200],
                                     labels=["0-14", "15-29", "30-44", "45-64", "65 y más"]).astype(str)
@@ -359,6 +427,20 @@ def resumen(ena, hogares):
                       "capacit. %": promedio(g, "capacitacion") * 100, "asoc. %": promedio(g, "asociado") * 100,
                       "crédito %": promedio(g, "obtuvo_credito") * 100 if g.obtuvo_credito.notna().any() else np.nan})
     print(pd.DataFrame(filas).round(1).to_string(index=False))
+    filas = []
+    for anio, g in ena[ena.productor_cacao.eq("Productor de cacao")].groupby("anio"):
+        r = lambda num, den: (g[num] * g.factor).sum() / (g[den] * g.factor)[g[num].notna()].sum()  # noqa: E731
+        filas.append({"año": anio, "UA cacao": len(g), "productores (miles)": g.factor.sum() / 1e3,
+                      "ha/UA": promedio(g, "cacao_ha") if g.cacao_ha.notna().any() else np.nan,
+                      "kg/ha": r("cacao_kg", "cacao_ha") if g.cacao_ha.notna().any() else np.nan,
+                      "S//kg": r("cacao_valor_venta", "cacao_kg_vendido") if g.cacao_valor_venta.notna().any()
+                      else np.nan,
+                      "coop %": promedio(g, "cacao_vende_cooperativa") * 100
+                      if g.cacao_vende_cooperativa.notna().any() else np.nan})
+    print("\nProductores de cacao (ENA)\n" + pd.DataFrame(filas).round(1).to_string(index=False))
+    hc = hogares[hogares.productor_cacao.notna()].groupby(["anio", "productor_cacao"]).apply(
+        lambda g: pd.Series({"n": len(g), "pobreza %": promedio(g, "pobre") * 100}))
+    print("\nHogares (ENAHO)\n" + hc.round(1).unstack().to_string())
     pob = hogares.groupby("anio").apply(lambda g: pd.Series({"pobreza %": promedio(g, "pobre") * 100,
                                                              "extrema %": promedio(g, "pobre_extremo") * 100}))
     print(pob.round(1).T.to_string())

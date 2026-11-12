@@ -26,8 +26,24 @@ def fmt(x, dec=1):
     return s.replace(",", " ").replace(".", ",")
 
 
+def con_unidad(v_txt, unidad):
+    """«37,9» → «37,9 %», «54,5 años», «731,5 kg/ha», «S/ 24,9 por kg»."""
+    if unidad == "años":
+        return f"{v_txt} años"
+    if unidad.startswith("%"):
+        return f"{v_txt} %"
+    if unidad.startswith("S/"):
+        return f"S/ {v_txt}{unidad[2:]}"
+    return f"{v_txt} {unidad}"
+
+
+def diferencia_txt(v_txt, unidad):
+    """Una diferencia: en puntos porcentuales si la unidad es %, si no en la misma unidad."""
+    return f"{v_txt} puntos porcentuales" if unidad.startswith("%") else con_unidad(v_txt, unidad)
+
+
 def fmt_valor(x, unidad):
-    return f"{fmt(x)} años" if unidad == "años" else f"{fmt(x)} %"
+    return con_unidad(fmt(x), unidad)
 
 
 # Hechos que puede usar el redactor ----------------------------------------------------------------------------------
@@ -47,7 +63,7 @@ def _tramos(r):
         sentido = "se mantuvo" if abs(round(dif, 1)) < 0.1 else ("aumentó" if dif > 0 else "disminuyó")
         tramos.append({"desde": str(a.anio), "hasta": str(b.anio), "valor_desde": fmt(a.valor),
                        "valor_hasta": fmt(b.valor), "sentido": sentido,
-                       "variacion": fmt(abs(dif)) + (" años" if r.unidad == "años" else " puntos porcentuales")})
+                       "variacion": diferencia_txt(fmt(abs(dif)), r.unidad)})
     return tramos
 
 
@@ -73,8 +89,8 @@ def hechos(resultados: list[Resultado]):
                 alto, bajo = confiables.loc[confiables.valor.idxmax()], confiables.loc[confiables.valor.idxmin()]
                 h["mayor"] = {"grupo": alto.grupo, "valor": fmt(alto.valor)}
                 h["menor"] = {"grupo": bajo.grupo, "valor": fmt(bajo.valor)}
-                h["diferencia_mayor_menor"] = fmt(round(alto.valor, 1) - round(bajo.valor, 1)) + (
-                    " años" if r.unidad == "años" else " puntos porcentuales")
+                h["diferencia_mayor_menor"] = diferencia_txt(fmt(round(alto.valor, 1) - round(bajo.valor, 1)),
+                                                             r.unidad)
                 if len(confiables) == 2:
                     h["razon_mayor_menor"] = fmt(alto.valor / bajo.valor) if bajo.valor else None
             if r.nacional:
@@ -171,6 +187,8 @@ def redactar(resultados: list[Resultado], pregunta="", api_key=None, usar_ia=Tru
 def _sujeto(r):
     """«la edad promedio…», «el porcentaje de productores…», «la pobreza monetaria»."""
     nombre = r.indicador.nombre[0].lower() + r.indicador.nombre[1:]
+    if r.indicador.tipo == "razon":
+        return f"el {nombre}"                          # «el rendimiento del cacao», «el precio en chacra…»
     if r.indicador.tipo == "media" or r.indicador.base == "enaho":
         return f"la {nombre}"
     return f"el porcentaje de {nombre}"
@@ -184,26 +202,26 @@ def redactar_con_plantilla(resultados: list[Resultado]):
     """Texto determinístico, sin IA: siempre verificable."""
     oraciones, titulo = [], ""
     for k, (h, r) in enumerate(zip(hechos(resultados), resultados)):
-        u = " años" if r.unidad == "años" else " %"
+        V = lambda x: con_unidad(x, r.unidad)  # noqa: E731
         filtros = r.filtros.texto()
         ambito = f" ({filtros})" if filtros else ""
         inicio = f"Según la {h['encuesta']}, " if k == 0 else "Por su parte, "
         sujeto = _sujeto(r)
         if "tramos" in h and h["tramos"]:
-            partes = [f"entre {tr['desde']} y {tr['hasta']} {tr['sentido']} de {tr['valor_desde']}{u} a "
-                      f"{tr['valor_hasta']}{u}" + ("" if tr["sentido"] == "se mantuvo" else f" ({tr['variacion']})")
+            partes = [f"entre {tr['desde']} y {tr['hasta']} {tr['sentido']} de {V(tr['valor_desde'])} a "
+                      f"{V(tr['valor_hasta'])}" + ("" if tr["sentido"] == "se mantuvo" else f" ({tr['variacion']})")
                       for tr in h["tramos"]]
             oraciones.append(f"Según la {r.indicador.encuesta}, {sujeto}{ambito} {_lista(partes)}.")
             ult = h["tramos"][-1]
             if "mayor" in h and h["mayor"]["grupo"] not in {tr[k] for tr in h["tramos"] for k in ("desde", "hasta")}:
                 oraciones.append(f"El valor más alto de la serie se registró en {h['mayor']['grupo']} "
-                                 f"({h['mayor']['valor']}{u}).")
+                                 f"({V(h['mayor']['valor'])}).")
             if len(h["tramos"]) > 1:
                 oraciones.append(f"Desde {CAMBIO_DISENO_ENA} la ENA usa un nuevo diseño muestral, por lo que los "
                                  "tramos no se comparan entre sí.")
             elif any("Sin dato" in a for a in h["advertencias"]):
                 oraciones.append(next(a for a in h["advertencias"] if "Sin dato" in a))
-            titulo = titulo or f"{r.indicador.nombre}: {ult['valor_hasta']}{u} en {ult['hasta']}"
+            titulo = titulo or f"{r.indicador.nombre}: {V(ult['valor_hasta'])} en {ult['hasta']}"
         elif r.indicador.tipo == "distribucion":
             grupos = list(dict.fromkeys(v["grupo"] for v in h["valores"]))
             if r.es_serie:                       # una serie de distribuciones: el primer y el último año
@@ -213,30 +231,30 @@ def redactar_con_plantilla(resultados: list[Resultado]):
                 vals = [v for v in h["valores"] if v["grupo"] == g]
                 top = max(vals, key=lambda v: float(v["valor"].replace(",", ".")))
                 partes.append((f"en {g.lower()}, " if len(grupos) > 1 else "") + f"el grupo más numeroso es "
-                              f"«{top['categoria']}» ({top['valor']}{u})")
+                              f"«{top['categoria']}» ({V(top['valor'])})")
             oraciones.append(f"{inicio}en la {r.indicador.nombre.lower()}{ambito}, {_lista(partes)}.")
             titulo = titulo or r.indicador.nombre
         elif len(h["valores"]) == 1:
             v = h["valores"][0]
             ic = h.get("intervalo_95")
-            extra = f" (intervalo de confianza al 95 %: {ic[0]}–{ic[1]}{u})" if ic else ""
-            verbo = "es de" if r.unidad == "años" else "es"
-            oraciones.append(f"{inicio}{sujeto}{ambito} {verbo} {v['valor']}{u}{extra}.")
-            titulo = titulo or f"{r.indicador.nombre}: {v['valor']}{u}"
+            extra = f" (intervalo de confianza al 95 %: {V(f'{ic[0]}–{ic[1]}')})" if ic else ""
+            verbo = "es" if r.unidad.startswith("%") else "es de"
+            oraciones.append(f"{inicio}{sujeto}{ambito} {verbo} {V(v['valor'])}{extra}.")
+            titulo = titulo or f"{r.indicador.nombre}: {V(v['valor'])}"
         else:
             if len(h["valores"]) <= 5:
-                partes = [f"{v['valor']}{u} en {v['grupo']}" + (" (referencial)" if v["referencial"] else "")
+                partes = [f"{V(v['valor'])} en {v['grupo']}" + (" (referencial)" if v["referencial"] else "")
                           for v in h["valores"]]
                 oraciones.append(f"{inicio}{sujeto}{ambito} es de {_lista(partes)}.")
             if "mayor" in h:
-                rango = (f"en {h['mayor']['grupo']} ({h['mayor']['valor']}{u}) y el más bajo en "
-                         f"{h['menor']['grupo']} ({h['menor']['valor']}{u}), una diferencia de "
+                rango = (f"en {h['mayor']['grupo']} ({V(h['mayor']['valor'])}) y el más bajo en "
+                         f"{h['menor']['grupo']} ({V(h['menor']['valor'])}), una diferencia de "
                          f"{h['diferencia_mayor_menor']}")
                 oraciones.append(f"El valor más alto se registra {rango}." if len(h["valores"]) <= 5
                                  else f"{inicio}{sujeto}{ambito} alcanza su valor más alto {rango}.")
-                titulo = titulo or f"{h['mayor']['grupo']} registra el valor más alto: {h['mayor']['valor']}{u}"
+                titulo = titulo or f"{h['mayor']['grupo']} registra el valor más alto: {V(h['mayor']['valor'])}"
             if "total_del_universo" in h:
-                oraciones.append(f"Para el total, {sujeto} es {h['total_del_universo']}{u}.")
+                oraciones.append(f"Para el total, {sujeto} es {V(h['total_del_universo'])}.")
             titulo = titulo or f"{r.indicador.nombre} según {DESAGREGACIONES[r.desagregacion].lower()}"
     texto = " ".join(o[0].upper() + o[1:] for o in oraciones)
     if any(v.get("referencial") for h in hechos(resultados) for v in h["valores"]):

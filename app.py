@@ -154,11 +154,13 @@ else:
         depto = c4.selectbox("Departamento", ("ninguno",) + DEPARTAMENTOS, format_func=lambda x: "Todos" if x == "ninguno" else x)
         area = c5.selectbox("Área (ENAHO)", ("ninguno",) + AREAS, format_func=lambda x: "Todas" if x == "ninguno" else x)
         sexo = c6.selectbox("Sexo", ("ninguno", "Hombre", "Mujer"), format_func=lambda x: "Todos" if x == "ninguno" else x)
+        cacao = st.checkbox("Solo productores u hogares de cacao",
+                            help="ENA: cosechó cacao en los últimos 12 meses. ENAHO: el hogar produjo cacao.")
         enviar = st.form_submit_button("Calcular", type="primary", icon=":material/calculate:")
     if enviar and ids:
         consulta = Consulta(en_alcance=True, indicadores=ids, desagregacion=desag, anio=anio,
                             filtro_region_natural=region, filtro_area=area, filtro_departamento=depto,
-                            filtro_sexo=sexo, explicacion="Consulta armada a mano.")
+                            filtro_sexo=sexo, solo_cacao=cacao, explicacion="Consulta armada a mano.")
         pregunta = (", ".join(POR_ID[i].nombre for i in ids) + f" por {DESAGREGACIONES[desag].lower()}"
                     + (f" en {anio}" if anio != "ultimo" and desag != "anio" else ""))
 
@@ -198,7 +200,8 @@ if R:
             st.badge(DESAGREGACIONES[consulta.desagregacion], icon=":material/splitscreen:", color="violet")
             st.badge(resultados[0].encuesta_txt, icon=":material/calendar_month:", color="green")
             for k, v in consulta.filtros().activos().items():
-                st.badge(f"{DESAGREGACIONES[k]}: {v}", icon=":material/filter_alt:", color="orange")
+                st.badge("Solo cacao" if k == "cacao" else f"{DESAGREGACIONES[k]}: {v}", icon=":material/filter_alt:",
+                         color="orange")
             st.badge("Interpretado por Claude" if R["origen"] == "claude" else
                      ("Consulta manual" if R["origen"] == "manual" else "Interpretado por reglas"),
                      icon=":material/smart_toy:", color="gray")

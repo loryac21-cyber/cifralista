@@ -98,6 +98,26 @@ def test_todos_los_indicadores_calculan_en_todas_sus_desagregaciones(ind):
         assert not res.tabla.empty and res.tabla.valor.notna().all(), (ind, d)
 
 
+def test_productores_de_cacao_en_la_ena():
+    assert anios_de("cacao_rendimiento") == (2016, 2017, 2019, 2021, 2022, 2023, 2024, 2025)
+    precio = calcular("cacao_precio_chacra", "anio").tabla.set_index("grupo").valor
+    assert precio["2025"] > 3 * precio["2019"]            # el alza internacional llegó a la chacra
+    rend = calcular("cacao_rendimiento").tabla.iloc[0]
+    assert 300 < rend.valor < 1500 and rend.ee > 0
+    t = calcular("edad_promedio", "productor_cacao").tabla.set_index("grupo")
+    assert set(t.index) == {"Productor de cacao", "Otros productores"}
+    solo = calcular("edad_promedio", filtros=Filtros(cacao=True)).tabla.iloc[0]
+    assert solo.valor == pytest.approx(t.loc["Productor de cacao", "valor"])
+
+
+def test_hogares_cacaoteros_en_la_enaho():
+    t = calcular("pobreza_monetaria", "productor_cacao", anio=2024).tabla.set_index("grupo")
+    assert set(t.index) == {"Hogar cacaotero", "Otro hogar agrícola", "Hogar no agrícola"}
+    assert 20 < t.loc["Hogar cacaotero", "valor"] < t.loc["Otro hogar agrícola", "valor"]
+    serie = calcular("pobreza_monetaria", "anio", Filtros(cacao=True)).tabla
+    assert len(serie) == 11
+
+
 @pytest.mark.parametrize("ind", [i.id for i in INDICADORES])
 def test_todos_los_indicadores_calculan_en_su_primer_anio(ind):
     res = calcular(ind, POR_ID[ind].desagregaciones[2], anio=anios_de(ind)[0])

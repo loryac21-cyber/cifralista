@@ -29,7 +29,7 @@ mcp = FastMCP("cifralista", instructions=(
     "cambio de diseño de la ENA en 2023) y cita la fuente que devuelven."))
 
 
-def _resultados(indicadores, desagregacion, region_natural, area, departamento, sexo, anio=0):
+def _resultados(indicadores, desagregacion, region_natural, area, departamento, sexo, anio=0, cacao=False):
     desconocidos = [i for i in indicadores if i not in POR_ID]
     if desconocidos:
         raise ToolError(f"No existen {desconocidos}. Usa listar_indicadores para ver los ids.")
@@ -37,7 +37,7 @@ def _resultados(indicadores, desagregacion, region_natural, area, departamento, 
         raise ToolError("Pide entre 1 y 3 indicadores.")
     try:
         return calcular_varios(indicadores, desagregacion, Filtros(region_natural or None, area or None,
-                                                                   departamento or None, sexo or None),
+                                                                   departamento or None, sexo or None, cacao),
                                anio=anio or None)
     except ValueError as e:
         raise ToolError(str(e)) from e
@@ -54,15 +54,16 @@ def listar_indicadores() -> list[dict]:
 
 @mcp.tool(annotations=SOLO_LECTURA)
 def calcular(indicadores: list[str], desagregacion: str = "nacional", region_natural: str = "", area: str = "",
-             departamento: str = "", sexo: str = "", anio: int = 0) -> dict:
+             departamento: str = "", sexo: str = "", anio: int = 0, cacao: bool = False) -> dict:
     """Calcula 1 a 3 indicadores con factor de expansión, error estándar, IC 95 % y CV.
 
     desagregacion: nacional, anio (serie: un cálculo por año), region_natural, departamento, area, sexo,
-    grupo_edad, nivel_educativo o lengua_materna.
+    grupo_edad, nivel_educativo, lengua_materna o productor_cacao (cacao frente al resto).
     anio: año del cálculo (0 = el último con dato); no se usa con desagregacion="anio".
-    Filtros opcionales: region_natural (Costa/Sierra/Selva), area (Urbana/Rural, solo ENAHO), departamento, sexo.
+    Filtros opcionales: region_natural (Costa/Sierra/Selva), area (Urbana/Rural, solo ENAHO), departamento, sexo,
+    cacao=true (solo productores u hogares de cacao). Los indicadores cacao_* ya son solo de productores de cacao.
     """
-    res = _resultados(indicadores, desagregacion, region_natural, area, departamento, sexo, anio)
+    res = _resultados(indicadores, desagregacion, region_natural, area, departamento, sexo, anio, cacao)
     salida = {"desagregacion": DESAGREGACIONES[desagregacion], "resultados": []}
     for r in res:
         tabla = r.tabla.round({"valor": 2, "ee": 3, "cv": 1, "ic_inf": 2, "ic_sup": 2, "N": 0})
@@ -77,10 +78,10 @@ def calcular(indicadores: list[str], desagregacion: str = "nacional", region_nat
 
 @mcp.tool(annotations={"readOnlyHint": False, "openWorldHint": False})
 def graficar(indicadores: list[str], desagregacion: str = "departamento", titulo: str = "", region_natural: str = "",
-             area: str = "", departamento: str = "", sexo: str = "", anio: int = 0) -> dict:
+             area: str = "", departamento: str = "", sexo: str = "", anio: int = 0, cacao: bool = False) -> dict:
     """Guarda el gráfico estilo nota técnica en salidas/ y devuelve la ruta. El título debe decir el hallazgo.
     Con desagregacion="anio" dibuja la serie (líneas por año)."""
-    res = _resultados(indicadores, desagregacion, region_natural, area, departamento, sexo, anio)
+    res = _resultados(indicadores, desagregacion, region_natural, area, departamento, sexo, anio, cacao)
     fig = figura(res, titulo or redactar_con_plantilla(res).titulo)
     if fig is None:
         raise ToolError("Una sola cifra no necesita gráfico: usa calcular y repórtala en el texto.")
@@ -92,9 +93,9 @@ def graficar(indicadores: list[str], desagregacion: str = "departamento", titulo
 
 @mcp.tool(annotations=SOLO_LECTURA)
 def parrafo_base(indicadores: list[str], desagregacion: str = "nacional", region_natural: str = "",
-                 area: str = "", departamento: str = "", sexo: str = "", anio: int = 0) -> dict:
+                 area: str = "", departamento: str = "", sexo: str = "", anio: int = 0, cacao: bool = False) -> dict:
     """Párrafo descriptivo sin IA (plantilla) y los hechos ya redondeados que se pueden citar."""
-    res = _resultados(indicadores, desagregacion, region_natural, area, departamento, sexo, anio)
+    res = _resultados(indicadores, desagregacion, region_natural, area, departamento, sexo, anio, cacao)
     red = redactar_con_plantilla(res)
     return {"titulo": red.titulo, "parrafo": red.parrafo, "hechos": hechos(res)}
 

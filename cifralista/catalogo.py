@@ -15,11 +15,13 @@ DESAGREGACIONES = {
     "grupo_edad": "Grupo de edad",
     "nivel_educativo": "Nivel educativo",
     "lengua_materna": "Lengua materna",
+    "productor_cacao": "Productor de cacao frente al resto",
 }
 
 DESAG_ENA = ("nacional", "anio", "region_natural", "departamento", "sexo", "grupo_edad", "nivel_educativo",
-             "lengua_materna")
-DESAG_ENAHO = ("nacional", "anio", "area", "region_natural", "departamento", "sexo", "grupo_edad")
+             "lengua_materna", "productor_cacao")
+DESAG_ENAHO = ("nacional", "anio", "area", "region_natural", "departamento", "sexo", "grupo_edad", "productor_cacao")
+DESAG_CACAO = ("nacional", "anio", "region_natural", "departamento", "sexo", "grupo_edad", "nivel_educativo")
 
 # Años con microdatos en data/ (los arma scripts/preparar_datos.py). En 2020 no hubo ENA por la pandemia.
 ANIOS_ENA = (2014, 2015, 2016, 2017, 2018, 2019, 2021, 2022, 2023, 2024, 2025)
@@ -39,6 +41,7 @@ def fuente(encuesta, anios):
 
 UNIVERSO_PM = "pequeños y medianos productores agropecuarios (persona natural)"
 UNIVERSO_UA = "unidades agropecuarias (productores y empresas)"
+UNIVERSO_CACAO = "unidades agropecuarias que cosecharon cacao en los últimos 12 meses"
 
 
 @dataclass(frozen=True)
@@ -47,8 +50,8 @@ class Indicador:
     nombre: str
     encuesta: str                 # ENA | ENAHO (el año va en cada cálculo)
     base: str                     # ena | enaho
-    columna: str
-    tipo: str                     # proporcion | media | distribucion
+    columna: str                  # en una razón, el numerador
+    tipo: str                     # proporcion | media | distribucion | razon
     unidad: str
     universo: str
     variable: str                 # pregunta o variable del INEI de donde sale
@@ -56,6 +59,7 @@ class Indicador:
     desagregaciones: tuple = DESAG_ENA
     nota: str = ""
     categorias: tuple = field(default=())
+    denominador: str = ""         # razón = Σ factor × columna / Σ factor × denominador
 
     @property
     def anios(self):
@@ -80,7 +84,7 @@ INDICADORES = [
     Indicador("estructura_edad", "Estructura por edad del productor", "ENA", "ena", "grupo_edad",
               "distribucion", "%", UNIVERSO_PM, "Cap. 1100, P1104_A agrupada como el INEI (15-24, 25-44, 45-59, 60+)",
               ("estructura por edad", "grupos de edad", "distribución por edad", "pirámide", "por tramos de edad"),
-              desagregaciones=("nacional", "anio", "region_natural", "sexo"),
+              desagregaciones=("nacional", "anio", "region_natural", "sexo", "productor_cacao"),
               categorias=("15-24", "25-44", "45-59", "60 y más")),
     Indicador("productoras_mujeres", "Productoras mujeres", "ENA", "ena", "mujer", "proporcion", "%",
               UNIVERSO_PM, "Cap. 1100, P1103 = 2 (sexo del productor)",
@@ -93,7 +97,7 @@ INDICADORES = [
     Indicador("nivel_educativo_dist", "Nivel educativo del productor", "ENA", "ena", "nivel_educativo",
               "distribucion", "%", UNIVERSO_PM, "Cap. 1100, P1105 agrupada (hasta primaria, secundaria, superior)",
               ("distribución educativa", "nivel educativo alcanzado", "estudios superiores", "secundaria"),
-              desagregaciones=("nacional", "anio", "region_natural", "sexo", "grupo_edad"),
+              desagregaciones=("nacional", "anio", "region_natural", "sexo", "grupo_edad", "productor_cacao"),
               categorias=("Hasta primaria", "Secundaria", "Superior")),
     Indicador("lengua_originaria", "Productores con lengua materna originaria", "ENA", "ena",
               "lengua_originaria", "proporcion", "%", UNIVERSO_PM,
@@ -134,6 +138,30 @@ INDICADORES = [
               ("tipo de actividad", "agrícola y pecuaria", "solo agrícola", "solo pecuaria", "crianza"),
               desagregaciones=("nacional", "anio", "region_natural"),
               categorias=("Agrícola y pecuaria", "Solo agrícola", "Solo pecuaria", "No realizó actividad")),
+    # ENA: cacao (capítulo 200, cultivo 1202) ------------------------------------------------------------------------
+    Indicador("cacao_superficie", "Superficie cosechada de cacao por productor", "ENA", "ena", "cacao_ha", "media",
+              "ha", UNIVERSO_CACAO, "Cap. 200, P217 (superficie cosechada en hectáreas) del cultivo 1202",
+              ("superficie de cacao", "hectáreas de cacao", "tamaño de la parcela", "cuántas hectáreas"), DESAG_CACAO,
+              nota="La ENA 2014, 2015 y 2018 no traen la superficie en hectáreas."),
+    Indicador("cacao_rendimiento", "Rendimiento del cacao", "ENA", "ena", "cacao_kg", "razon", "kg/ha",
+              UNIVERSO_CACAO, "Cap. 200: producción total (P219, en kg) entre superficie cosechada (P217)",
+              ("rendimiento", "productividad", "kilos por hectárea", "kg por hectárea"), DESAG_CACAO,
+              nota="Razón de totales: kg cosechados entre hectáreas cosechadas.", denominador="cacao_ha"),
+    Indicador("cacao_precio_chacra", "Precio en chacra del cacao", "ENA", "ena", "cacao_valor_venta", "razon",
+              "S/ por kg", UNIVERSO_CACAO + " y lo vendieron",
+              "Cap. 200: valor de la venta (P220_1, soles) entre kg vendidos",
+              ("precio en chacra", "precio del cacao", "precio al productor", "cuánto le pagan"), DESAG_CACAO,
+              nota="Soles corrientes de cada año; la ENA 2014 no trae el valor de la venta.",
+              denominador="cacao_kg_vendido"),
+    Indicador("cacao_vende_cooperativa", "Productores de cacao que venden a una asociación o cooperativa", "ENA",
+              "ena", "cacao_vende_cooperativa", "proporcion", "%", UNIVERSO_CACAO + " y lo vendieron",
+              "Cap. 200, P222_4 (vendió a una asociación o cooperativa)",
+              ("vende a cooperativas", "venden a cooperativas", "venta asociativa", "comercialización asociativa"),
+              DESAG_CACAO),
+    Indicador("cacao_vende_acopiador", "Productores de cacao que venden a acopiadores", "ENA", "ena",
+              "cacao_vende_acopiador", "proporcion", "%", UNIVERSO_CACAO + " y lo vendieron",
+              "Cap. 200, P222_1 (vendió a un acopiador)", ("acopiador", "acopiadores", "intermediario",
+                                                          "intermediarios"), DESAG_CACAO),
     # ENAHO ---------------------------------------------------------------------------------------------------------
     Indicador("pobreza_monetaria", "Pobreza monetaria", "ENAHO", "enaho", "pobre", "proporcion",
               "% de la población", "población residente habitual",
@@ -162,7 +190,10 @@ DEPARTAMENTOS = ("Amazonas", "Áncash", "Apurímac", "Arequipa", "Ayacucho", "Ca
 def catalogo_para_prompt():
     """Texto compacto del catálogo para el modelo de lenguaje (se cachea: no cambia entre consultas)."""
     lineas = [f"Años: ENA {', '.join(map(str, ANIOS_ENA))} (en 2020 no hubo ENA); ENAHO {periodo(ANIOS_ENAHO)}. "
-              "La ENA 2021 no tuvo el capítulo de servicios financieros (crédito, seguro, ahorro) ni lengua materna."]
+              "La ENA 2021 no tuvo el capítulo de servicios financieros (crédito, seguro, ahorro) ni lengua materna.",
+              "Cacao: productor de cacao = unidad agropecuaria que cosechó cacao en los últimos 12 meses (ENA) u hogar "
+              "que produjo cacao (ENAHO, módulo 22). Los indicadores cacao_* ya se calculan solo sobre ellos; para "
+              "otros indicadores, filtro solo_cacao o desagregación productor_cacao (cacao frente al resto)."]
     for i in INDICADORES:
         lineas.append(f"- {i.id}: {i.nombre} ({i.encuesta}; {i.tipo}; universo: {i.universo}; "
                       f"desagregaciones: {', '.join(i.desagregaciones)})")

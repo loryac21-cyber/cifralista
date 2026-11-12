@@ -30,12 +30,14 @@ class Consulta(BaseModel):
     filtro_area: Literal[("ninguno",) + AREAS]
     filtro_departamento: Literal[("ninguno",) + DEPARTAMENTOS]
     filtro_sexo: Literal["ninguno", "Hombre", "Mujer"]
+    solo_cacao: bool = Field(description="true si la pregunta es sobre productores u hogares de cacao y el indicador "
+                                         "no es cacao_*; false si no, o si se desagrega por productor_cacao")
     explicacion: str = Field(description="una oración: qué se calculará, o por qué no se puede y qué sí hay")
 
     def filtros(self):
         v = lambda x: None if x == "ninguno" else x
         return Filtros(region_natural=v(self.filtro_region_natural), area=v(self.filtro_area),
-                       departamento=v(self.filtro_departamento), sexo=v(self.filtro_sexo))
+                       departamento=v(self.filtro_departamento), sexo=v(self.filtro_sexo), cacao=self.solo_cacao)
 
     def anio_int(self):
         return None if self.anio == "ultimo" or self.desagregacion == "anio" else int(self.anio)
@@ -105,6 +107,8 @@ def _sanear(c: Consulta) -> Consulta:
     c.indicadores = ids
     if c.desagregacion == "anio":
         c.anio = "ultimo"
+    if c.desagregacion == "productor_cacao" or (ids and all(i.startswith("cacao_") for i in ids)):
+        c.solo_cacao = False                    # ya es solo cacao, o se compara cacao frente al resto
     if c.desagregacion == "sexo":
         c.filtro_sexo = "ninguno"
     if c.desagregacion == "region_natural":
@@ -134,6 +138,9 @@ PALABRAS_DESAGREGACION = [
     ("grupo_edad", ["por edad", "grupo de edad", "grupos de edad", "por tramos de edad", "segun edad"]),
     ("nivel_educativo", ["por nivel educativo", "segun nivel educativo", "por educacion"]),
     ("lengua_materna", ["por lengua", "segun lengua", "por idioma"]),
+    ("productor_cacao", ["frente al resto", "frente a otros productores", "y el resto de productores",
+                         "con otros productores", "cacaoteros y no cacaoteros", "versus otros", "vs otros",
+                         "frente a otros hogares", "comparados con otros"]),
 ]
 
 
@@ -185,7 +192,9 @@ def interpretar_con_reglas(pregunta):
         if re.search(r"\b(las|de|entre) (mujeres|productoras)\b", t):
             filtros["filtro_sexo"] = "Mujer"
 
+    solo_cacao = "cacao" in t and desagregacion != "productor_cacao"
     consulta = Consulta(en_alcance=bool(ids), indicadores=ids, desagregacion=desagregacion, anio=anio,
+                        solo_cacao=solo_cacao,
                         explicacion=("Se calcula con el catálogo validado." if ids else
                                      "No encontré un indicador del catálogo para esa pregunta; prueben con edad, "
                                      "educación, capacitación, asistencia técnica, crédito, asociatividad o pobreza."),

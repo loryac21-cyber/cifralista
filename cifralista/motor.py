@@ -28,7 +28,10 @@ ORDEN = {
     "sexo": ["Hombre", "Mujer"],
     "nivel_educativo": ["Hasta primaria", "Secundaria", "Superior"],
     "lengua_materna": ["Castellano", "Quechua", "Aymara", "Otra lengua nativa", "Otra"],
+    "productor_cacao": ["Productor de cacao", "Otros productores", "Hogar cacaotero", "Otro hogar agrícola",
+                        "Hogar no agrícola"],
 }
+CACAO = ["Productor de cacao", "Hogar cacaotero"]      # el grupo cacao en la ENA y en la ENAHO
 
 
 @lru_cache(maxsize=None)
@@ -57,7 +60,10 @@ def anios_de(indicador_id):
     """Años en que la encuesta trae la pregunta del indicador (p. ej. la ENA 2021 no tuvo crédito)."""
     ind = POR_ID[indicador_id]
     df = base("ena" if ind.base == "ena" else "hogares")
-    return tuple(sorted(int(a) for a in df.loc[df[ind.columna].notna(), "anio"].unique()))
+    con_dato = df[ind.columna].notna()
+    if ind.denominador:
+        con_dato &= df[ind.denominador].gt(0)
+    return tuple(sorted(int(a) for a in df.loc[con_dato, "anio"].unique()))
 
 
 @dataclass
@@ -66,12 +72,14 @@ class Filtros:
     area: str | None = None
     departamento: str | None = None
     sexo: str | None = None
+    cacao: bool = False            # solo productores (ENA) u hogares (ENAHO) de cacao
 
     def activos(self):
         return {k: v for k, v in self.__dict__.items() if v}
 
     def texto(self):
-        return ", ".join(f"{DESAGREGACIONES[k].lower()}: {v}" for k, v in self.activos().items())
+        return ", ".join("solo productores de cacao" if k == "cacao" else f"{DESAGREGACIONES[k].lower()}: {v}"
+                         for k, v in self.activos().items())
 
 
 @dataclass
@@ -157,6 +165,15 @@ def estimar(df, columna, dominio, categoria=None, escala=100.0):
     return {"valor": R * escala, "ee": ee * escala, "n": n, "N": N}
 
 
+def estimar_razon(df, numerador, denominador, dominio):
+    """Razón de totales (p. ej. kg cosechados / ha cosechadas) con su error estándar por linealización."""
+    y, x = df[numerador], df[denominador]
+    en_dominio = dominio & y.notna() & x.gt(0)
+    d = en_dominio.to_numpy().astype(float)
+    R, ee = razon_con_error(df, d * y.fillna(0).to_numpy(), d * x.fillna(0).to_numpy())
+    return {"valor": R, "ee": ee, "n": int(en_dominio.sum()), "N": float(df.loc[en_dominio, "factor"].sum())}
+
+
 def _fila(grupo, est, indicador_nombre, categoria=None):
     cv = abs(est["ee"] / est["valor"] * 100) if est["valor"] else np.nan
     fila = {"indicador": indicador_nombre, "grupo": grupo, "valor": est["valor"], "ee": est["ee"], "cv": cv,
@@ -174,6 +191,9 @@ def elegir_base(ind, desagregacion):
 
 
 def metodo_de(ind, base_usada, anios):
+    if ind.tipo == "razon":
+        return (f"Razón de totales ponderados: Σ factor × {ind.columna} / Σ factor × {ind.denominador} "
+                "(factor de expansión del productor agropecuario).")
     if base_usada == "ena":
         if min(anios) >= CAMBIO_DISENO_ENA:
             factor = "FACTOR_PRODUCTOR"
@@ -190,6 +210,9 @@ def metodo_de(ind, base_usada, anios):
 def _dominio(df, ind, desagregacion, filtros, avisos):
     dominio = pd.Series(True, index=df.index)
     for k, v in filtros.activos().items():
+        if k == "cacao":
+            dominio &= df["productor_cacao"].isin(CACAO)
+            continue
         if k not in df.columns:
             raise ValueError(f"La {ind.encuesta} no permite filtrar por {DESAGREGACIONES[k].lower()}.")
         dominio &= df[k].eq(v)
@@ -241,6 +264,12 @@ def calcular(indicador_id, desagregacion="nacional", filtros=None, con_nacional=
         anios = (anio,)
     base_usada = elegir_base(ind, desagregacion)
     escala = 1.0 if ind.tipo == "media" else 100.0
+
+    def est(df, dom):
+        if ind.tipo == "razon":
+            return estimar_razon(df, ind.columna, ind.denominador, dom)
+        return estimar(df, ind.columna, dom, escala=escala)
+
     avisos, filas, nacional = [], [], None
     for a in anios:
         df = base_anio(base_usada, a)
@@ -249,16 +278,17 @@ def calcular(indicador_id, desagregacion="nacional", filtros=None, con_nacional=
             grupos = [(str(a), dominio)]
         elif desagregacion == "nacional":
             grupos = [("Total" if filtros.activos() or ind.tipo == "distribucion" else "Perú", dominio)]
-        else:
-            grupos = [(g, dominio & df[desagregacion].eq(g)) for g in _grupos(df, desagregacion, dominio)]
+        else:                          # solo grupos con dato (p. ej. departamentos sin cacao no aparecen)
+            con_dato = dominio & df[ind.columna].notna()
+            grupos = [(g, dominio & df[desagregacion].eq(g)) for g in _grupos(df, desagregacion, con_dato)]
         for g, dom in grupos:
             if ind.tipo == "distribucion":
                 for cat in ind.categorias:
                     filas.append(_fila(g, estimar(df, ind.columna, dom, categoria=cat), ind.nombre, categoria=cat))
             else:
-                filas.append(_fila(g, estimar(df, ind.columna, dom, escala=escala), ind.nombre))
+                filas.append(_fila(g, est(df, dom), ind.nombre))
         if con_nacional and desagregacion not in ("nacional", "anio") and ind.tipo != "distribucion":
-            nacional = _fila("Total", estimar(df, ind.columna, dominio, escala=escala), ind.nombre)
+            nacional = _fila("Total", est(df, dominio), ind.nombre)
     tabla = pd.DataFrame(filas)
     avisos += _avisos_de_anios(ind, anios, serie)
     if tabla.referencial.any():
@@ -295,7 +325,8 @@ def codigo_reproducible(res: Resultado):
     lineas = ["import pandas as pd", "",
               f'df = pd.read_parquet("data/{ARCHIVOS[res.base_usada]}.parquet")']
     cond = [] if res.es_serie else [f'(df["anio"] == {res.anio})']
-    cond += [f'(df["{k}"] == "{v}")' for k, v in res.filtros.activos().items()]
+    cond += ['df["productor_cacao"].isin(["Productor de cacao", "Hogar cacaotero"])' if k == "cacao"
+             else f'(df["{k}"] == "{v}")' for k, v in res.filtros.activos().items()]
     if ind.base == "ena" and (res.desagregacion in SOLO_PERSONA_NATURAL or res.filtros.sexo):
         cond.append('df["pequeno_mediano"]')
     col = ind.columna
@@ -308,9 +339,16 @@ def codigo_reproducible(res: Resultado):
         lineas.append(f"tabla = tabla / tabla.groupby(level={0 if por else None!r}).transform('sum') * 100"
                       if por else "tabla = tabla / tabla.sum() * 100")
     else:
-        escala = "" if ind.tipo == "media" else " * 100"
-        lineas.append(f'df = df[df["{col}"].notna()]')
-        f = f'lambda g: (g["{col}"] * g["factor"]).sum() / g["factor"].sum(){escala}'
+        escala = "" if ind.tipo in ("media", "razon") else " * 100"
+        den = f'g["{ind.denominador}"] * g["factor"]' if ind.tipo == "razon" else 'g["factor"]'
+        lineas.append(f'df = df[df["{col}"].notna()' + (f' & (df["{ind.denominador}"] > 0)]' if ind.tipo == "razon"
+                                                        else "]"))
+        f = f'lambda g: (g["{col}"] * g["factor"]).sum() / ({den}).sum(){escala}'
+        if ind.tipo == "razon":
+            lineas.append(f"razon = {f}")
+            lineas.append("valor = razon(df)" if res.desagregacion == "nacional" else
+                          f'tabla = df.groupby("{res.desagregacion}", observed=True).apply(razon)')
+            return "\n".join(lineas)
         if res.desagregacion == "nacional":
             lineas.append(f'valor = (df["{col}"] * df["factor"]).sum() / df["factor"].sum(){escala}')
         else:

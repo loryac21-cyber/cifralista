@@ -11,8 +11,9 @@ inventar ninguna cifra.**
 | | |
 |---|---|
 | Pregunta → resultado | ~10 segundos: gráfico, párrafo verificado, cuadro con IC 95 % y CV, Word y código reproducible |
-| Validación | **10 de 10** cifras publicadas por el INEI se reproducen exactas desde los microdatos (ENA 2025 y ENAHO 2024) |
-| Pruebas | **49** pruebas automáticas (`uv run --group mcp pytest`) |
+| Años | **ENA 2014-2025** (en 2020 no hubo ENA) y **ENAHO 2014-2024**: cada año se calcula con su propia muestra, y las series avisan el cambio de diseño de la ENA en 2023 |
+| Validación | **21 de 21** cifras publicadas por el INEI se reproducen exactas desde los microdatos (ENA 2022 y 2025; pobreza monetaria de cada año 2014-2024) |
+| Pruebas | **91** pruebas automáticas (`uv run --group mcp pytest`) |
 | Costo de IA por consulta | ≈ **US$ 0,002** con Claude Haiku 5.5, medido ([detalle](#7-modelo-de-negocio)) |
 
 ---
@@ -87,8 +88,8 @@ El mismo motor está disponible como **servidor MCP** (`mcp_server.py`), para qu
 - **La evidencia de que la IA sola no basta.** En septiembre de 2026, Pew Research Center publicó que los encuestados
   sintéticos se equivocan unos 12 puntos en promedio. Los datos reales del INEI siguen siendo la fuente; lo que faltaba
   era un acceso que no exija Stata.
-- **Datos públicos recientes.** La ENA 2025 y la ENAHO 2024 están disponibles en el portal de microdatos del INEI, y un
-  extracto de 1 MB alcanza para responder el catálogo en segundos en un servidor gratuito.
+- **Datos públicos recientes y con historia.** La ENA 2014-2025 y la ENAHO 2014-2024 están en el portal de microdatos
+  del INEI, y un extracto de 8 MB alcanza para responder el catálogo, año por año o en serie, en un servidor gratuito.
 
 ## 6. Demo
 
@@ -134,8 +135,8 @@ flowchart LR
     I --> C["Consulta: indicadores,<br/>desagregación, filtros (enums)"]
     R --> C
     C --> M["motor.py<br/>promedio ponderado + error estándar<br/>(estratos y conglomerados)"]
-    D[("data/*.parquet<br/>ENA 2025 · ENAHO 2024<br/>extracto de microdatos INEI")] --> M
-    M --> G["graficos.py<br/>barras / agrupadas / 100 %"]
+    D[("data/*.parquet<br/>ENA 2014-2025 · ENAHO 2014-2024<br/>extracto de microdatos INEI")] --> M
+    M --> G["graficos.py<br/>barras / agrupadas / 100 % / series"]
     M --> W["redactor.py<br/>Claude escribe · verificador de cifras"]
     G --> A["app.py (Streamlit)"]
     W --> A
@@ -154,6 +155,20 @@ flowchart LR
 | Datos | Extracto propio de los microdatos del INEI (`scripts/preparar_datos.py`) | Sin API externa: más rápido y reproducible. El script se detiene si una cifra no coincide con el INEI |
 
 El modelo se cambia con `CIFRALISTA_MODELO` en `.env`.
+
+**Series y comparabilidad.** Una serie es un cálculo por año, cada uno con su muestra y su factor de expansión, nunca
+un promedio de años. Lo que cambia entre años se avisa en la app, en el gráfico y en el párrafo:
+
+- **ENA:** en 2020 no hubo encuesta; la de 2021 no tuvo el capítulo de servicios financieros (crédito, seguro, ahorro)
+  ni la lengua materna; en 2021-2023 solo se encuestó a pequeños y medianos productores (las empresas pesan menos de
+  0,1 puntos en el total). **Desde 2023 la ENA usa un nuevo diseño muestral** (segmentos y `FACTOR_PRODUCTOR`): el
+  gráfico corta la línea en 2022-2023 y el texto describe cada tramo por separado, sin compararlos.
+- **ENAHO:** 2020 es atípico (parte de las entrevistas fueron telefónicas por la pandemia). La pobreza monetaria de
+  cada año, 2014-2024, coincide con la serie oficial del INEI.
+- **Error estándar:** linealización de Taylor con conglomerados (`CONGLOMERADO` hasta 2022, segmentos `NSEGM` desde
+  2023) y estratos departamento × región natural (más los estratos del marco de lista hasta 2019). Es una aproximación
+  conservadora: con el diseño de la ENA 2023-2025, cuyos factores varían mucho, varios indicadores poco frecuentes salen
+  «referenciales» por departamento.
 
 ## 7. Modelo de negocio
 
@@ -192,8 +207,7 @@ desarrollo mientras crecen las suscripciones.
 de 1 hora en centros de estudiantes de economía, con el plan Tesis como oferta; (3) LinkedIn: publicar cada semana una
 cifra de la ENA hecha con CifraLista; (4) consultoras que hacen líneas de base, con una nota express de prueba.
 
-**Qué sigue.** Más módulos (empleo e ingresos de la ENAHO, ENA por cultivo), series 2015–2025 para comparar años,
-mapas por departamento, Censo 2017 por distrito para diagnósticos de proyectos, y cuentas de usuario con cobro.
+**Qué sigue.** Más módulos (empleo e ingresos de la ENAHO, ENA por cultivo), series por departamento, mapas, Censo 2017 por distrito para diagnósticos de proyectos, y cuentas de usuario con cobro.
 
 **Riesgos y cómo los manejo.**
 
@@ -222,8 +236,10 @@ analista que usa Claude.
 
 Usé **Claude Code** (Claude Opus 5.5) como programador. **Generó:** el script de preparación de datos, el motor con
 error estándar por linealización, el catálogo, el intérprete, el redactor y el verificador, los gráficos, la exportación
-a Word, la app Streamlit, el servidor MCP, las 49 pruebas, el borrador de este README, la guía de entrevistas y el
-guion del pitch. También hizo la búsqueda de competencia y el conteo en ALICIA.
+a Word, la app Streamlit, el servidor MCP, las 91 pruebas, el borrador de este README, la guía de entrevistas y el
+guion del pitch. También hizo la búsqueda de competencia y el conteo en ALICIA. Después del pitch amplió los datos a
+2014-2025: ubicó en el catálogo del INEI los módulos de cada año, armonizó las variables (que casi no cambian entre
+años), detectó el cambio de diseño de la ENA en 2023 y corrigió el error estándar del diseño nuevo.
 
 **Hice yo:** la idea a partir de mi propia nota técnica; la elección de indicadores, universos y cortes de edad del
 INEI; la revisión de cada cifra contra las publicaciones del INEI; las conversaciones con usuarios; el modelo de negocio
@@ -240,13 +256,14 @@ cifralista/
 ├── mcp_server.py · .mcp.json # servidor MCP
 ├── cifralista/               # catalogo, motor, interprete, redactor, graficos, exportar, validacion
 ├── scripts/preparar_datos.py # de los microdatos del INEI a data/*.parquet, con validación
-├── data/                     # extracto de la ENA 2025 y la ENAHO 2024 (1 MB)
-├── tests/                    # 49 pruebas: cifras del INEI, intérprete, verificador, MCP
+├── data/                     # extracto de la ENA 2014-2025 y la ENAHO 2014-2024 (8 MB)
+├── tests/                    # 91 pruebas: cifras del INEI por año, series, intérprete, verificador, MCP
 ├── docs/research/            # conversaciones con usuarios y evidencia
 ├── docs/pitch.md             # guion de 3 minutos y del video
 └── LICENSE · .env.example · .gitignore · pyproject.toml · uv.lock · requirements.txt
 ```
 
-**Datos:** extracto de los microdatos públicos del INEI (ENA 2025, código 1036; ENAHO 2024, código 966), sin
-coordenadas ni identificadores de vivienda. Para regenerarlo: `uv run scripts/preparar_datos.py --descargar`.
+**Datos:** extracto de los microdatos públicos del INEI (ENA 2014-2025: capítulos 700, 800, 900 y 1100; ENAHO
+2014-2024: sumaria y módulo 02; los códigos de cada año están en el script), sin coordenadas ni identificadores de
+vivienda. Para regenerarlo: `uv run --group datos scripts/preparar_datos.py --descargar` (baja unos 500 MB del INEI).
 Licencia del código: MIT.

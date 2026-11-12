@@ -16,6 +16,12 @@ CASOS = [
     ("Capacitación de las mujeres productoras por región natural", "capacitacion", "region_natural",
      {"filtro_sexo": "Mujer"}),
     ("Nivel de educación del productor por sexo", "hasta_primaria", "sexo", {}),
+    ("¿Cómo evolucionó la pobreza monetaria desde 2014?", "pobreza_monetaria", "anio", {"anio": "ultimo"}),
+    ("Productores de 60 años a más entre 2015 y 2025 en la sierra", "productores_60_mas", "anio",
+     {"filtro_region_natural": "Sierra"}),
+    ("Pobreza monetaria por departamento en 2019", "pobreza_monetaria", "departamento", {"anio": "2019"}),
+    ("¿Cuántas productoras de la sierra obtuvieron crédito en 2019?", "obtuvo_credito", "nacional",
+     {"anio": "2019", "filtro_region_natural": "Sierra"}),
 ]
 
 
@@ -45,7 +51,14 @@ def test_verificador_acepta_cifras_del_calculo_y_rechaza_inventadas():
 
 def test_plantilla_siempre_verificable():
     for ind, d in [("edad_promedio", "nacional"), ("asistencia_tecnica", "departamento"),
-                   ("estructura_edad", "nacional"), ("pobreza_monetaria", "area")]:
+                   ("estructura_edad", "nacional"), ("pobreza_monetaria", "area"), ("productores_60_mas", "anio"),
+                   ("pobreza_monetaria", "anio"), ("obtuvo_credito", "anio"), ("estructura_edad", "anio")]:
         res = [calcular(ind, d)]
         red = redactar_con_plantilla(res)
         assert red.parrafo and verificar_cifras(red.titulo + " " + red.parrafo, res) == [], (ind, red.parrafo)
+
+
+def test_plantilla_de_serie_no_compara_tramos_de_diseno_distinto():
+    red = redactar_con_plantilla([calcular("productores_60_mas", "anio")])
+    assert "entre 2014 y 2022" in red.parrafo and "entre 2023 y 2025" in red.parrafo
+    assert "nuevo diseño muestral" in red.parrafo

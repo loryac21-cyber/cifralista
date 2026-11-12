@@ -12,9 +12,10 @@ from pydantic import BaseModel, Field
 
 from . import llm
 from .catalogo import DESAGREGACIONES
-from .motor import Resultado
+from .motor import CAMBIO_DISENO_ENA, Resultado
+
 # Números que pueden aparecer sin venir del cálculo: años, cortes de edad del INEI, «últimos 12 meses», «95 %».
-NUMEROS_LIBRES = {2012, 2022, 2023, 2024, 2025, 2026, 0, 1, 3, 12, 14, 15, 24, 25, 29, 30, 44, 45, 59, 60, 64, 65, 95}
+NUMEROS_LIBRES = set(range(2012, 2027)) | {0, 1, 3, 12, 14, 15, 24, 25, 29, 30, 44, 45, 59, 60, 64, 65, 95}
 
 
 def fmt(x, dec=1):
@@ -31,14 +32,36 @@ def fmt_valor(x, unidad):
 
 # Hechos que puede usar el redactor ----------------------------------------------------------------------------------
 
+def _tramos(r):
+    """Evolución de una serie por tramos comparables: en la ENA, antes y después del cambio de diseño de 2023."""
+    t = r.tabla.assign(anio=r.tabla.grupo.astype(int))
+    cortes = [t]
+    if r.indicador.base == "ena" and t.anio.min() < CAMBIO_DISENO_ENA <= t.anio.max():
+        cortes = [t[t.anio < CAMBIO_DISENO_ENA], t[t.anio >= CAMBIO_DISENO_ENA]]
+    tramos = []
+    for c in cortes:
+        if len(c) < 2:
+            continue
+        a, b = c.iloc[0], c.iloc[-1]
+        dif = round(b.valor, 1) - round(a.valor, 1)          # la resta que el lector puede rehacer con el texto
+        sentido = "se mantuvo" if abs(round(dif, 1)) < 0.1 else ("aumentó" if dif > 0 else "disminuyó")
+        tramos.append({"desde": str(a.anio), "hasta": str(b.anio), "valor_desde": fmt(a.valor),
+                       "valor_hasta": fmt(b.valor), "sentido": sentido,
+                       "variacion": fmt(abs(dif)) + (" años" if r.unidad == "años" else " puntos porcentuales")})
+    return tramos
+
+
 def hechos(resultados: list[Resultado]):
     """Todo lo que el texto puede decir, ya calculado y redondeado. El modelo no hace restas ni promedios."""
     salida = []
     for r in resultados:
         t = r.tabla
-        h = {"indicador": r.indicador.nombre, "encuesta": r.indicador.encuesta, "unidad": r.unidad,
+        h = {"indicador": r.indicador.nombre, "encuesta": r.encuesta_txt, "unidad": r.unidad,
              "universo": r.indicador.universo, "desagregacion": r.desagregacion,
-             "filtros": r.filtros.activos(), "fuente": r.indicador.fuente}
+             "filtros": r.filtros.activos(), "fuente": r.fuente}
+        if r.es_serie and "categoria" not in t:
+            h["tramos"] = _tramos(r)
+            h["advertencias"] = [a for a in r.avisos if "diseño" in a or "Sin dato" in a or "atípico" in a]
         if "categoria" in t:
             h["valores"] = [{"grupo": g, "categoria": c, "valor": fmt(v)}
                             for g, c, v in zip(t.grupo, t.categoria, t.valor)]
@@ -50,7 +73,7 @@ def hechos(resultados: list[Resultado]):
                 alto, bajo = confiables.loc[confiables.valor.idxmax()], confiables.loc[confiables.valor.idxmin()]
                 h["mayor"] = {"grupo": alto.grupo, "valor": fmt(alto.valor)}
                 h["menor"] = {"grupo": bajo.grupo, "valor": fmt(bajo.valor)}
-                h["diferencia_mayor_menor"] = fmt(alto.valor - bajo.valor) + (
+                h["diferencia_mayor_menor"] = fmt(round(alto.valor, 1) - round(bajo.valor, 1)) + (
                     " años" if r.unidad == "años" else " puntos porcentuales")
                 if len(confiables) == 2:
                     h["razon_mayor_menor"] = fmt(alto.valor / bajo.valor) if bajo.valor else None
@@ -119,8 +142,11 @@ Reglas estrictas:
 «diferencia_mayor_menor».
 - Si un valor tiene "referencial": true, no lo destaques como hallazgo.
 - Describe, no expliques causas: no afirmes por qué ocurre algo.
-- Menciona la encuesta y el año en el texto (por ejemplo, «según la ENA 2025»). No pongas la cita de la fuente \
-al final: la app la agrega.
+- Menciona la encuesta y el año o el periodo en el texto (por ejemplo, «según la ENA 2025» o «entre 2014 y 2024, \
+según la ENAHO»). No pongas la cita de la fuente al final: la app la agrega.
+- Si hay "tramos" (una serie por años), describe la evolución con ellos, tal cual: año y valor de inicio y de fin, \
+"sentido" y "variacion". Si hay más de un tramo, descríbelos por separado y no compares años de tramos distintos: \
+la encuesta cambió su diseño muestral entre ellos. Si hay "advertencias", menciona la más importante en una oración.
 - Sin viñetas ni markdown."""
 
 
@@ -163,8 +189,25 @@ def redactar_con_plantilla(resultados: list[Resultado]):
         ambito = f" ({filtros})" if filtros else ""
         inicio = f"Según la {h['encuesta']}, " if k == 0 else "Por su parte, "
         sujeto = _sujeto(r)
-        if r.indicador.tipo == "distribucion":
+        if "tramos" in h and h["tramos"]:
+            partes = [f"entre {tr['desde']} y {tr['hasta']} {tr['sentido']} de {tr['valor_desde']}{u} a "
+                      f"{tr['valor_hasta']}{u}" + ("" if tr["sentido"] == "se mantuvo" else f" ({tr['variacion']})")
+                      for tr in h["tramos"]]
+            oraciones.append(f"Según la {r.indicador.encuesta}, {sujeto}{ambito} {_lista(partes)}.")
+            ult = h["tramos"][-1]
+            if "mayor" in h and h["mayor"]["grupo"] not in {tr[k] for tr in h["tramos"] for k in ("desde", "hasta")}:
+                oraciones.append(f"El valor más alto de la serie se registró en {h['mayor']['grupo']} "
+                                 f"({h['mayor']['valor']}{u}).")
+            if len(h["tramos"]) > 1:
+                oraciones.append(f"Desde {CAMBIO_DISENO_ENA} la ENA usa un nuevo diseño muestral, por lo que los "
+                                 "tramos no se comparan entre sí.")
+            elif any("Sin dato" in a for a in h["advertencias"]):
+                oraciones.append(next(a for a in h["advertencias"] if "Sin dato" in a))
+            titulo = titulo or f"{r.indicador.nombre}: {ult['valor_hasta']}{u} en {ult['hasta']}"
+        elif r.indicador.tipo == "distribucion":
             grupos = list(dict.fromkeys(v["grupo"] for v in h["valores"]))
+            if r.es_serie:                       # una serie de distribuciones: el primer y el último año
+                grupos = [grupos[0], grupos[-1]]
             partes = []
             for g in grupos:
                 vals = [v for v in h["valores"] if v["grupo"] == g]

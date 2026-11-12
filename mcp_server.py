@@ -14,20 +14,22 @@ from fastmcp.exceptions import ToolError
 
 from cifralista.catalogo import DESAGREGACIONES, INDICADORES, POR_ID
 from cifralista.graficos import a_png, figura
-from cifralista.motor import Filtros, calcular_varios, codigo_reproducible
+from cifralista.motor import Filtros, anios_de, calcular_varios, codigo_reproducible
 from cifralista.redactor import hechos, redactar_con_plantilla
 
 SALIDAS = Path(__file__).parent / "salidas"
 SOLO_LECTURA = {"readOnlyHint": True, "openWorldHint": False}
 
 mcp = FastMCP("cifralista", instructions=(
-    "Indicadores oficiales del Perú calculados desde los microdatos del INEI (ENA 2025 y ENAHO 2024). Primero mira "
-    "el catálogo con listar_indicadores; luego usa calcular para obtener las cifras con su intervalo de confianza y "
-    "coeficiente de variación, y graficar para el PNG. No calcules a mano ni escribas cifras que no vengan de estas "
-    "herramientas; marca como referencial toda cifra con referencial=true y cita la fuente que devuelven."))
+    "Indicadores oficiales del Perú calculados desde los microdatos del INEI (ENA 2014-2025, sin 2020, y ENAHO "
+    "2014-2024). Primero mira el catálogo con listar_indicadores (incluye los años con dato de cada indicador); luego "
+    "usa calcular para obtener las cifras con su intervalo de confianza y coeficiente de variación (un año, o la "
+    "serie con desagregacion='anio'), y graficar para el PNG. No calcules a mano ni escribas cifras que no vengan de "
+    "estas herramientas; marca como referencial toda cifra con referencial=true, menciona los avisos (p. ej. el "
+    "cambio de diseño de la ENA en 2023) y cita la fuente que devuelven."))
 
 
-def _resultados(indicadores, desagregacion, region_natural, area, departamento, sexo):
+def _resultados(indicadores, desagregacion, region_natural, area, departamento, sexo, anio=0):
     desconocidos = [i for i in indicadores if i not in POR_ID]
     if desconocidos:
         raise ToolError(f"No existen {desconocidos}. Usa listar_indicadores para ver los ids.")
@@ -35,28 +37,32 @@ def _resultados(indicadores, desagregacion, region_natural, area, departamento, 
         raise ToolError("Pide entre 1 y 3 indicadores.")
     try:
         return calcular_varios(indicadores, desagregacion, Filtros(region_natural or None, area or None,
-                                                                   departamento or None, sexo or None))
+                                                                   departamento or None, sexo or None),
+                               anio=anio or None)
     except ValueError as e:
         raise ToolError(str(e)) from e
 
 
 @mcp.tool(annotations=SOLO_LECTURA)
 def listar_indicadores() -> list[dict]:
-    """Catálogo de indicadores validados: id, nombre, encuesta, universo, unidad y desagregaciones válidas."""
-    return [{"id": i.id, "nombre": i.nombre, "encuesta": i.encuesta, "universo": i.universo, "unidad": i.unidad,
-             "tipo": i.tipo, "variable": i.variable, "desagregaciones": list(i.desagregaciones), "nota": i.nota}
+    """Catálogo de indicadores validados: id, nombre, encuesta, años con dato, universo, unidad y desagregaciones."""
+    return [{"id": i.id, "nombre": i.nombre, "encuesta": i.encuesta, "anios": list(anios_de(i.id)),
+             "universo": i.universo, "unidad": i.unidad, "tipo": i.tipo, "variable": i.variable,
+             "desagregaciones": list(i.desagregaciones), "nota": i.nota}
             for i in INDICADORES]
 
 
 @mcp.tool(annotations=SOLO_LECTURA)
 def calcular(indicadores: list[str], desagregacion: str = "nacional", region_natural: str = "", area: str = "",
-             departamento: str = "", sexo: str = "") -> dict:
+             departamento: str = "", sexo: str = "", anio: int = 0) -> dict:
     """Calcula 1 a 3 indicadores con factor de expansión, error estándar, IC 95 % y CV.
 
-    desagregacion: nacional, region_natural, departamento, area, sexo, grupo_edad, nivel_educativo o lengua_materna.
+    desagregacion: nacional, anio (serie: un cálculo por año), region_natural, departamento, area, sexo,
+    grupo_edad, nivel_educativo o lengua_materna.
+    anio: año del cálculo (0 = el último con dato); no se usa con desagregacion="anio".
     Filtros opcionales: region_natural (Costa/Sierra/Selva), area (Urbana/Rural, solo ENAHO), departamento, sexo.
     """
-    res = _resultados(indicadores, desagregacion, region_natural, area, departamento, sexo)
+    res = _resultados(indicadores, desagregacion, region_natural, area, departamento, sexo, anio)
     salida = {"desagregacion": DESAGREGACIONES[desagregacion], "resultados": []}
     for r in res:
         tabla = r.tabla.round({"valor": 2, "ee": 3, "cv": 1, "ic_inf": 2, "ic_sup": 2, "N": 0})
@@ -71,23 +77,24 @@ def calcular(indicadores: list[str], desagregacion: str = "nacional", region_nat
 
 @mcp.tool(annotations={"readOnlyHint": False, "openWorldHint": False})
 def graficar(indicadores: list[str], desagregacion: str = "departamento", titulo: str = "", region_natural: str = "",
-             area: str = "", departamento: str = "", sexo: str = "") -> dict:
-    """Guarda el gráfico estilo nota técnica en salidas/ y devuelve la ruta. El título debe decir el hallazgo."""
-    res = _resultados(indicadores, desagregacion, region_natural, area, departamento, sexo)
+             area: str = "", departamento: str = "", sexo: str = "", anio: int = 0) -> dict:
+    """Guarda el gráfico estilo nota técnica en salidas/ y devuelve la ruta. El título debe decir el hallazgo.
+    Con desagregacion="anio" dibuja la serie (líneas por año)."""
+    res = _resultados(indicadores, desagregacion, region_natural, area, departamento, sexo, anio)
     fig = figura(res, titulo or redactar_con_plantilla(res).titulo)
     if fig is None:
         raise ToolError("Una sola cifra no necesita gráfico: usa calcular y repórtala en el texto.")
     SALIDAS.mkdir(exist_ok=True)
-    ruta = SALIDAS / f"{'_'.join(indicadores)}_{desagregacion}.png"
+    ruta = SALIDAS / f"{'_'.join(indicadores)}_{desagregacion}_{res[0].encuesta_txt.split()[-1]}.png"
     ruta.write_bytes(a_png(fig))
-    return {"ruta": str(ruta.resolve()), "fuente": res[0].indicador.fuente}
+    return {"ruta": str(ruta.resolve()), "fuente": res[0].fuente}
 
 
 @mcp.tool(annotations=SOLO_LECTURA)
 def parrafo_base(indicadores: list[str], desagregacion: str = "nacional", region_natural: str = "",
-                 area: str = "", departamento: str = "", sexo: str = "") -> dict:
+                 area: str = "", departamento: str = "", sexo: str = "", anio: int = 0) -> dict:
     """Párrafo descriptivo sin IA (plantilla) y los hechos ya redondeados que se pueden citar."""
-    res = _resultados(indicadores, desagregacion, region_natural, area, departamento, sexo)
+    res = _resultados(indicadores, desagregacion, region_natural, area, departamento, sexo, anio)
     red = redactar_con_plantilla(res)
     return {"titulo": red.titulo, "parrafo": red.parrafo, "hechos": hechos(res)}
 

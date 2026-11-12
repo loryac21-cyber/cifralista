@@ -18,6 +18,9 @@ dependencies = [
 ]
 
 [dependency-groups]
+datos = [
+    "pyreadstat>=1.3.7",
+]
 dev = ["pytest>=8"]
 mcp = ["fastmcp>=2.10"]
 

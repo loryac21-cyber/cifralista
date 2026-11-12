@@ -32,6 +32,15 @@ def test_calcular_devuelve_la_cifra_del_inei_con_su_precision():
     assert "FACTOR_PRODUCTOR" in r["resultados"][0]["ficha"]["Método"]
 
 
+def test_calcular_por_anio_y_serie():
+    r = llamar("calcular", {"indicadores": ["productores_60_mas"], "anio": 2022}).structured_content
+    assert round(r["resultados"][0]["tabla"][0]["valor"], 1) == 40.2
+    s = llamar("calcular", {"indicadores": ["pobreza_monetaria"], "desagregacion": "anio"}).structured_content
+    assert len(s["resultados"][0]["tabla"]) == 11
+    cat = llamar("listar_indicadores", {}).structured_content["result"]
+    assert 2021 not in next(i for i in cat if i["id"] == "obtuvo_credito")["anios"]
+
+
 def test_errores_claros():
     with pytest.raises(Exception, match="listar_indicadores"):
         llamar("calcular", {"indicadores": ["ingreso_inventado"]})

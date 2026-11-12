@@ -12,7 +12,8 @@ import streamlit as st
 from dotenv import load_dotenv
 
 from cifralista import llm
-from cifralista.catalogo import AREAS, DEPARTAMENTOS, DESAGREGACIONES, INDICADORES, POR_ID, REGIONES
+from cifralista.catalogo import (ANIOS, ANIOS_ENA, ANIOS_ENAHO, AREAS, DEPARTAMENTOS, DESAGREGACIONES, INDICADORES,
+                                 POR_ID, REGIONES, periodo)
 from cifralista.exportar import documento, tabla_para_mostrar
 from cifralista.graficos import a_png, figura
 from cifralista.interprete import MODELO, Consulta, interpretar
@@ -26,11 +27,13 @@ st.set_page_config(page_title="CifraLista", page_icon=":material/query_stats:", 
 MAX_IA = int(os.getenv("CIFRALISTA_MAX_CONSULTAS_IA", "25"))
 EJEMPLOS = [
     "¿Qué porcentaje de productores tiene 60 años o más, por departamento?",
+    "¿Cómo evolucionó el porcentaje de productores de 60 años a más desde 2014?",
+    "Evolución de la pobreza monetaria desde 2014",
     "Capacitación y asistencia técnica por región natural",
     "Estructura por edad de los productores, hombres y mujeres",
-    "Pobreza monetaria urbana y rural",
-    "¿Cuántas productoras de la sierra obtuvieron crédito?",
+    "¿Cuántas productoras de la sierra obtuvieron crédito en 2019?",
 ]
+PERIODO_ENA, PERIODO_ENAHO = periodo(ANIOS_ENA), periodo(ANIOS_ENAHO)
 
 
 def clave_api():
@@ -52,7 +55,7 @@ def interpretar_cacheado(pregunta, usar_ia):
 @st.cache_data(max_entries=500, show_spinner=False)
 def redactar_cacheado(pregunta, consulta_json, usar_ia):
     c = Consulta.model_validate_json(consulta_json)
-    resultados = calcular_varios(c.indicadores, c.desagregacion, c.filtros())
+    resultados = calcular_varios(c.indicadores, c.desagregacion, c.filtros(), anio=c.anio_int())
     return redactar(resultados, pregunta, api_key=clave_api(), usar_ia=usar_ia)
 
 
@@ -65,7 +68,7 @@ st.session_state.setdefault("consultas_ia", 0)
 st.session_state.setdefault("resultado", None)
 
 # Encabezado -----------------------------------------------------------------------------------------------------------
-st.caption(":blue[**DATOS OFICIALES DEL INEI · ENA 2025 · ENAHO 2024**]")
+st.caption(f":blue[**DATOS OFICIALES DEL INEI · ENA {PERIODO_ENA} · ENAHO {PERIODO_ENAHO}**]")
 st.title("CifraLista", anchor=False)
 st.markdown("Escribe tu pregunta y recibe **el gráfico, el párrafo y el cuadro de tu nota técnica**, con cifras "
             "calculadas desde los microdatos del INEI con factores de expansión y verificadas una por una.")
@@ -75,10 +78,12 @@ k1.metric("Indicadores", len(INDICADORES), border=True, icon=":material/checklis
           help="Indicadores validados en el catálogo.")
 k2.metric("Iguales al INEI", f"{int(contraste.Coincide.sum())}/{len(contraste)}", border=True,
           icon=":material/verified:", help="Cifras publicadas por el INEI que CifraLista reproduce exactas.")
-k3.metric("Productores", fmt(len(base("ena")), 0), border=True, icon=":material/agriculture:",
-          help="Unidades agropecuarias encuestadas en la ENA 2025.")
-k4.metric("Personas", fmt(len(base("personas")), 0), border=True, icon=":material/groups:",
-          help="Residentes habituales encuestados en la ENAHO 2024.")
+k3.metric("Años", f"{min(ANIOS)}-{str(max(ANIOS))[2:]}", border=True, icon=":material/timeline:",
+          help=f"ENA {', '.join(map(str, ANIOS_ENA))} (en 2020 no hubo ENA) y ENAHO {PERIODO_ENAHO}. Cada año se "
+               "calcula con su propia muestra.")
+k4.metric("Registros", fmt((len(base("ena")) + len(base("personas"))) / 1e6, 1) + " M", border=True,
+          icon=":material/groups:", help=f"{fmt(len(base('ena')), 0)} unidades agropecuarias (ENA) y "
+                                         f"{fmt(len(base('personas')), 0)} residentes habituales (ENAHO), todos los años.")
 
 with st.sidebar:
     st.header("Cómo funciona")
@@ -99,9 +104,11 @@ with st.sidebar:
     st.subheader("Validación contra el INEI")
     st.caption(f"{int(contraste.Coincide.sum())} de {len(contraste)} cifras publicadas por el INEI se reproducen "
                "exactamente desde los microdatos.")
-    st.table(contraste.assign(INEI=contraste.INEI.map(fmt), CifraLista=contraste.CifraLista.map(fmt))
-             .set_index("Indicador")[["INEI", "CifraLista"]])
-    st.caption("Fuentes: INEI, microdatos de la ENA 2025 y la ENAHO 2024. Proyecto de la Diplomatura Q-Lab PUCP.")
+    with st.expander(f"Ver las {len(contraste)} cifras", icon=":material/table_view:"):
+        st.table(contraste.assign(INEI=contraste.INEI.map(fmt), CifraLista=contraste.CifraLista.map(fmt))
+                 .set_index("Indicador")[["INEI", "CifraLista"]])
+    st.caption(f"Fuentes: INEI, microdatos de la ENA {PERIODO_ENA} y la ENAHO {PERIODO_ENAHO}. Proyecto de la "
+               "Diplomatura Q-Lab PUCP.")
 
 # Entrada --------------------------------------------------------------------------------------------------------------
 modo = st.segmented_control("Cómo consultar", ["Escribir una pregunta", "Elegir el indicador"],
@@ -137,18 +144,23 @@ else:
                              default=["productores_60_mas"], max_selections=3,
                              format_func=lambda i: f"{POR_ID[i].nombre} · {POR_ID[i].encuesta}")
         c1, c2 = st.columns(2)
-        desag = c1.selectbox("Desagregación", list(DESAGREGACIONES), index=2, format_func=DESAGREGACIONES.get)
-        region = c2.selectbox("Región natural", ("ninguno",) + REGIONES, format_func=lambda x: "Todas" if x == "ninguno" else x)
-        c3, c4, c5 = st.columns(3)
-        depto = c3.selectbox("Departamento", ("ninguno",) + DEPARTAMENTOS, format_func=lambda x: "Todos" if x == "ninguno" else x)
-        area = c4.selectbox("Área (ENAHO)", ("ninguno",) + AREAS, format_func=lambda x: "Todas" if x == "ninguno" else x)
-        sexo = c5.selectbox("Sexo", ("ninguno", "Hombre", "Mujer"), format_func=lambda x: "Todos" if x == "ninguno" else x)
+        desag = c1.selectbox("Desagregación", list(DESAGREGACIONES), index=3, format_func=DESAGREGACIONES.get,
+                             help="«Año (serie)» calcula el indicador en cada año con dato.")
+        anio = c2.selectbox("Año", ("ultimo",) + tuple(str(a) for a in reversed(ANIOS)),
+                            format_func=lambda x: "Último con dato" if x == "ultimo" else x,
+                            help=f"ENA {PERIODO_ENA} (sin 2020) y ENAHO {PERIODO_ENAHO}. No se usa en la serie.")
+        c3, c4, c5, c6 = st.columns(4)
+        region = c3.selectbox("Región natural", ("ninguno",) + REGIONES, format_func=lambda x: "Todas" if x == "ninguno" else x)
+        depto = c4.selectbox("Departamento", ("ninguno",) + DEPARTAMENTOS, format_func=lambda x: "Todos" if x == "ninguno" else x)
+        area = c5.selectbox("Área (ENAHO)", ("ninguno",) + AREAS, format_func=lambda x: "Todas" if x == "ninguno" else x)
+        sexo = c6.selectbox("Sexo", ("ninguno", "Hombre", "Mujer"), format_func=lambda x: "Todos" if x == "ninguno" else x)
         enviar = st.form_submit_button("Calcular", type="primary", icon=":material/calculate:")
     if enviar and ids:
-        consulta = Consulta(en_alcance=True, indicadores=ids, desagregacion=desag, filtro_region_natural=region,
-                            filtro_area=area, filtro_departamento=depto, filtro_sexo=sexo,
-                            explicacion="Consulta armada a mano.")
-        pregunta = ", ".join(POR_ID[i].nombre for i in ids) + f" por {DESAGREGACIONES[desag].lower()}"
+        consulta = Consulta(en_alcance=True, indicadores=ids, desagregacion=desag, anio=anio,
+                            filtro_region_natural=region, filtro_area=area, filtro_departamento=depto,
+                            filtro_sexo=sexo, explicacion="Consulta armada a mano.")
+        pregunta = (", ".join(POR_ID[i].nombre for i in ids) + f" por {DESAGREGACIONES[desag].lower()}"
+                    + (f" en {anio}" if anio != "ultimo" and desag != "anio" else ""))
 
 # Cálculo --------------------------------------------------------------------------------------------------------------
 if consulta is not None:
@@ -158,7 +170,8 @@ if consulta is not None:
     else:
         try:
             with st.spinner("Calculando con los microdatos…"):
-                resultados = calcular_varios(consulta.indicadores, consulta.desagregacion, consulta.filtros())
+                resultados = calcular_varios(consulta.indicadores, consulta.desagregacion, consulta.filtros(),
+                                             anio=consulta.anio_int())
             usar_ia_texto = origen == "claude" and st.session_state.consultas_ia <= MAX_IA
             with st.spinner("Claude está redactando el párrafo…" if usar_ia_texto else "Redactando el párrafo…"):
                 red = redactar_cacheado(pregunta, consulta.model_dump_json(), True) if usar_ia_texto \
@@ -183,6 +196,7 @@ if R:
             for i in consulta.indicadores:
                 st.badge(POR_ID[i].nombre, icon=":material/analytics:", color="blue")
             st.badge(DESAGREGACIONES[consulta.desagregacion], icon=":material/splitscreen:", color="violet")
+            st.badge(resultados[0].encuesta_txt, icon=":material/calendar_month:", color="green")
             for k, v in consulta.filtros().activos().items():
                 st.badge(f"{DESAGREGACIONES[k]}: {v}", icon=":material/filter_alt:", color="orange")
             st.badge("Interpretado por Claude" if R["origen"] == "claude" else
@@ -199,14 +213,14 @@ if R:
                     etiqueta = r.indicador.nombre if f.grupo in ("Perú", "Total") else f"{r.indicador.nombre} · {f.grupo}"
                     st.metric(etiqueta, fmt_valor(f.valor, r.unidad), border=True,
                               help=f"IC 95 %: {fmt(f.ic_inf)}–{fmt(f.ic_sup)} · CV {fmt(f.cv)} % · "
-                                   f"{fmt(f.n, 0)} casos · {r.indicador.encuesta}")
+                                   f"{fmt(f.n, 0)} casos · {r.encuesta_txt}")
     else:
         st.image(R["png"], alt=red.titulo or resultados[0].indicador.nombre)
 
     with st.container(border=True):
         st.subheader(red.titulo or resultados[0].indicador.nombre)
         st.write(red.parrafo)
-        st.caption(f"Fuente: {'; '.join(sorted({r.indicador.fuente for r in resultados}))}. Elaboración propia con "
+        st.caption(f"Fuente: {'; '.join(sorted({r.fuente for r in resultados}))}. Elaboración propia con "
                    "CifraLista.")
         if red.no_verificadas:
             st.warning(f"Estas cifras del texto no salen del cálculo: {', '.join(red.no_verificadas)}. Usa el texto "

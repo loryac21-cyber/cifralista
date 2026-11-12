@@ -2,7 +2,7 @@
 
 Formas: un valor nacional no es un gráfico (la app lo muestra como cifra grande); un indicador por grupos va en
 barras horizontales ordenadas con la línea del total; 2-3 indicadores, en barras agrupadas; una distribución, en
-barras 100 % apiladas. Paleta categórica por orden fijo (azul, naranja, aqua, amarillo) validada para daltonismo.
+barras 100 % apiladas; una serie por años, en líneas cortadas donde cambia el diseño de la encuesta. Paleta categórica por orden fijo (azul, naranja, aqua, amarillo) validada para daltonismo.
 """
 import io
 import textwrap
@@ -14,6 +14,7 @@ import matplotlib.pyplot as plt  # noqa: E402
 from matplotlib.patches import Patch  # noqa: E402
 from matplotlib.ticker import FuncFormatter  # noqa: E402
 
+from .motor import CAMBIO_DISENO_ENA  # noqa: E402
 from .redactor import fmt  # noqa: E402
 
 SUPERFICIE = "#ffffff"          # mismo fondo que la app y el Word
@@ -52,7 +53,8 @@ def _marco(ax, horizontal=True):
     ax.tick_params(length=0)
     ax.grid(True, axis="x" if horizontal else "y", color=GRILLA, linewidth=0.8)
     ax.set_axisbelow(True)
-    (ax.xaxis if horizontal else ax.yaxis).set_major_formatter(FuncFormatter(lambda v, _: fmt(v, 0)))
+    (ax.xaxis if horizontal else ax.yaxis).set_major_formatter(
+        FuncFormatter(lambda v, _: fmt(v, 0 if float(v).is_integer() else 1)))
 
 
 def _encabezado_y_pie(fig, ax, resultados, titulo, nota="", con_leyenda=False):
@@ -60,12 +62,12 @@ def _encabezado_y_pie(fig, ax, resultados, titulo, nota="", con_leyenda=False):
     i = r.indicador
     filtros = r.filtros.texto()
     nombres = ", ".join(x.indicador.nombre for x in resultados) if len(resultados) > 1 else i.nombre
-    sub = f"{nombres} ({i.unidad}) · {i.universo}" + (f", {filtros}" if filtros else "") + f" · {i.encuesta}"
+    sub = f"{nombres} ({i.unidad}) · {i.universo}" + (f", {filtros}" if filtros else "") + f" · {r.encuesta_txt}"
     fig.suptitle("\n".join(textwrap.wrap(titulo or i.nombre, 70)), x=0.01, ha="left", fontsize=13,
                  fontweight="bold", color=TINTA)
     ax.set_title("\n".join(textwrap.wrap(sub, 100)), loc="left", fontsize=9, color=TINTA_2,
                  pad=26 if con_leyenda else 8)
-    pie = f"Fuente: {i.fuente}. Elaboración: CifraLista."
+    pie = f"Fuente: {'; '.join(sorted({x.fuente for x in resultados}))}. Elaboración: CifraLista."
     fig.supxlabel((nota + "\n" if nota else "") + pie, x=0.01, ha="left", fontsize=8, color=TENUE)
 
 
@@ -162,11 +164,62 @@ def apiladas(resultado, titulo):
     return fig
 
 
+def serie(resultados, titulo):
+    """Evolución por años: una línea por indicador (misma unidad), cortada donde cambia el diseño de la ENA; punteada
+    sobre los años sin encuesta; puntos huecos = cifras referenciales; rótulos solo al inicio y fin de cada tramo."""
+    r0 = resultados[0]
+    usar = [r for r in resultados if r.unidad == r0.unidad]          # un solo eje: nunca dos escalas
+    fig, ax = _lienzo(4.4)
+    corte = CAMBIO_DISENO_ENA if r0.indicador.base == "ena" else None
+    todos, valores = set(), []
+    for j, r in enumerate(usar):
+        color = SERIES[j]
+        t = r.tabla.assign(anio=r.tabla.grupo.astype(int)).set_index("anio").sort_index()
+        todos |= set(t.index)
+        valores += t.valor.tolist()
+        partes = [t] if not corte else [t[t.index < corte], t[t.index >= corte]]
+        for k, p in enumerate(x for x in partes if len(x)):
+            anios = list(p.index)
+            for a, b in zip(anios, anios[1:]):
+                ax.plot([a, b], [p.valor[a], p.valor[b]], color=color, linewidth=2,
+                        linestyle="-" if b - a == 1 else ":", solid_capstyle="round")
+            for a in (anios[0], anios[-1]) if len(anios) > 1 else (anios[0],):
+                ax.annotate(fmt(p.valor[a]), (a, p.valor[a]), textcoords="offset points", xytext=(0, 8),
+                            ha="center", fontsize=8.5, color=TINTA_2)
+        ax.scatter(t.index, t.valor, s=36, zorder=3, color=[SUPERFICIE if x else color for x in t.referencial],
+                   edgecolors=color, linewidths=1.6, label=r.indicador.nombre)
+    lo, hi = min(valores), max(valores)
+    margen = max(hi - lo, abs(hi) * 0.05, 0.5)
+    ax.set_ylim(max(0, lo - margen * 0.45), hi + margen * 0.45)
+    if corte and min(todos) < corte <= max(todos):
+        ax.axvline(corte - 0.5, color=TENUE, linestyle="--", linewidth=1)
+        ax.text(corte - 0.45, ax.get_ylim()[1], "Nuevo diseño\nmuestral", va="top", ha="left", fontsize=8,
+                color=TENUE)
+    xs = list(range(min(todos), max(todos) + 1))
+    ax.set_xticks(xs, [str(x) for x in xs])
+    ax.set_xlim(min(todos) - 0.5, max(todos) + 0.5)
+    _marco(ax, horizontal=False)
+    ax.set_ylabel("años" if r0.unidad == "años" else "%", fontsize=9, color=TENUE, loc="top")
+    notas = []
+    if len(xs) > len(todos) or any(len(r.tabla) < len(todos) for r in usar):
+        notas.append("Línea punteada: años sin dato" + (" (en 2020 no hubo ENA)." if corte and 2020 in xs else "."))
+    if any(r.tabla.referencial.any() for r in usar):
+        notas.append("Punto hueco: cifra referencial (coeficiente de variación mayor a 15 % o menos de 30 casos).")
+    if len(usar) < len(resultados):
+        notas.append("Solo se grafican los indicadores con la misma unidad (ver el cuadro).")
+    if len(usar) > 1:
+        _leyenda(ax, ncol=min(len(usar), 2))
+    _encabezado_y_pie(fig, ax, usar, titulo, " ".join(notas), con_leyenda=len(usar) > 1)
+    return fig
+
+
 def figura(resultados, titulo):
     """Elige la forma según los datos. Devuelve None cuando la respuesta es una sola cifra (no es un gráfico)."""
     r = resultados[0]
     if r.indicador.tipo == "distribucion":
         return apiladas(r, titulo)
+    if r.es_serie:
+        return serie(resultados, titulo) if len(r.tabla) > 1 else None
     if len(resultados) > 1:
         return None if r.desagregacion == "nacional" else agrupadas(resultados, titulo)
     return None if len(r.tabla) == 1 else barras(r, titulo)

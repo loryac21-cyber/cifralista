@@ -16,7 +16,7 @@ def tabla_para_mostrar(r):
     """Cuadro con los nombres que usa una nota técnica (sirve para la app, el CSV y el Word)."""
     t = r.tabla
     u = r.unidad
-    cols = {"grupo": "Grupo"}
+    cols = {"grupo": "Año" if r.es_serie else "Grupo"}
     if "categoria" in t:
         cols["categoria"] = "Categoría"
     df = t.rename(columns=cols)
@@ -43,7 +43,7 @@ def documento(resultados, redaccion, png, pregunta):
     doc.add_heading(redaccion.titulo or resultados[0].indicador.nombre, level=1)
     p = doc.add_paragraph(redaccion.parrafo)
     p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
-    fuentes = sorted({r.indicador.fuente for r in resultados})
+    fuentes = sorted({r.fuente for r in resultados})
     cita = doc.add_paragraph(f"Fuente: {'; '.join(fuentes)}. Elaboración propia con CifraLista.")
     cita.runs[0].font.size = Pt(9)
     cita.runs[0].font.color.rgb = GRIS
@@ -52,7 +52,7 @@ def documento(resultados, redaccion, png, pregunta):
         doc.add_picture(io.BytesIO(png), width=Cm(16))
 
     for r in resultados:
-        doc.add_heading(f"Cuadro: {r.indicador.nombre} ({r.unidad})", level=2)
+        doc.add_heading(f"Cuadro: {r.indicador.nombre}, {r.encuesta_txt} ({r.unidad})", level=2)
         t = tabla_para_mostrar(r)
         columnas = [c for c in t.columns if c not in ("Población expandida",)]
         tabla = doc.add_table(rows=1, cols=len(columnas))
